@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "../components/ui/dialog";
 import { Checkbox } from "../components/ui/checkbox";
 import { toast } from "sonner";
-import { UserPlus, Trash2, KeyRound, Upload, RefreshCw, Settings as SettingsIcon } from "lucide-react";
+import { UserPlus, Trash2, KeyRound, Upload, RefreshCw, Settings as SettingsIcon, Pencil } from "lucide-react";
 
 const MODULES = [
   { id: "home", label: "Início" },
@@ -214,6 +214,7 @@ function FancoilsTab() {
   const { data: fancoils = [] } = useQuery({ queryKey: ["fancoils-admin"], queryFn: async () => (await api.get("/fancoils")).data });
   const { data: detected = [] } = useQuery({ queryKey: ["detected"], queryFn: async () => (await api.get("/admin/detected-devices")).data });
   const [form, setForm] = useState({ name: "", device_id: "", floor: "", side: 1, description: "" });
+  const [editing, setEditing] = useState(null);
 
   const create = async () => {
     try {
@@ -288,7 +289,14 @@ function FancoilsTab() {
                   <td className="px-3 py-2">{f.floor}</td>
                   <td className="px-3 py-2">{f.side}</td>
                   <td className="px-3 py-2">{f.description}</td>
-                  <td className="px-3 py-2"><Button size="sm" variant="outline" onClick={() => remove(f.id)}><Trash2 className="w-4 h-4" /></Button></td>
+                  <td className="px-3 py-2 flex items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setEditing(f)} data-testid={`edit-fancoil-${f.name.toLowerCase()}`}>
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => remove(f.id)} data-testid={`delete-fancoil-${f.name.toLowerCase()}`}>
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -306,7 +314,114 @@ function FancoilsTab() {
           </div>
         ))}
       </Card>
+
+      <EditFancoilDialog fancoil={editing} onClose={() => setEditing(null)} onSaved={() => qc.invalidateQueries({ queryKey: ["fancoils-admin"] })} />
     </div>
+  );
+}
+
+function EditFancoilDialog({ fancoil, onClose, onSaved }) {
+  const [form, setForm] = useState({});
+  React.useEffect(() => {
+    if (fancoil) {
+      setForm({
+        name: fancoil.name,
+        floor: fancoil.floor,
+        side: fancoil.side,
+        description: fancoil.description || "",
+        setpoint_min: fancoil.setpoint_min,
+        setpoint_max: fancoil.setpoint_max,
+        temp_alarm_min: fancoil.temp_alarm_min,
+        temp_alarm_max: fancoil.temp_alarm_max,
+        active: fancoil.active !== false,
+      });
+    }
+  }, [fancoil]);
+
+  const save = async () => {
+    try {
+      await api.patch(`/fancoils/${fancoil.id}`, {
+        name: form.name,
+        floor: parseInt(form.floor),
+        side: parseInt(form.side),
+        description: form.description,
+        setpoint_min: parseFloat(form.setpoint_min),
+        setpoint_max: parseFloat(form.setpoint_max),
+        temp_alarm_min: parseFloat(form.temp_alarm_min),
+        temp_alarm_max: parseFloat(form.temp_alarm_max),
+        active: form.active,
+      });
+      toast.success("Fancoil atualizado");
+      onSaved();
+      onClose();
+    } catch (e) {
+      toast.error(formatApiError(e));
+    }
+  };
+
+  if (!fancoil) return null;
+
+  return (
+    <Dialog open={!!fancoil} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="edit-fancoil-dialog">
+        <DialogHeader>
+          <DialogTitle>Editar fancoil — {fancoil.name}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="text-xs font-mono uppercase bg-muted/40 border border-border rounded p-2">
+            Device ID: <b>{fancoil.device_id}</b> (não editável — se mudou o ESP32, remova e cadastre novamente)
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <Label className="text-[10px] uppercase">Nome</Label>
+              <Input value={form.name || ""} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="edit-fancoil-name" />
+            </div>
+            <div>
+              <Label className="text-[10px] uppercase">Descrição</Label>
+              <Input value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} data-testid="edit-fancoil-description" />
+            </div>
+            <div>
+              <Label className="text-[10px] uppercase">Andar</Label>
+              <Input type="number" value={form.floor ?? ""} onChange={(e) => setForm({ ...form, floor: e.target.value })} data-testid="edit-fancoil-floor" />
+            </div>
+            <div>
+              <Label className="text-[10px] uppercase">Lado</Label>
+              <Select value={String(form.side || 1)} onValueChange={(v) => setForm({ ...form, side: parseInt(v) })}>
+                <SelectTrigger data-testid="edit-fancoil-side"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Lado 1 (esquerda)</SelectItem>
+                  <SelectItem value="2">Lado 2 (direita)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-[10px] uppercase">Setpoint mínimo (°C)</Label>
+              <Input type="number" step="0.5" value={form.setpoint_min ?? ""} onChange={(e) => setForm({ ...form, setpoint_min: e.target.value })} data-testid="edit-fancoil-sp-min" />
+            </div>
+            <div>
+              <Label className="text-[10px] uppercase">Setpoint máximo (°C)</Label>
+              <Input type="number" step="0.5" value={form.setpoint_max ?? ""} onChange={(e) => setForm({ ...form, setpoint_max: e.target.value })} data-testid="edit-fancoil-sp-max" />
+            </div>
+            <div>
+              <Label className="text-[10px] uppercase">Alarme temp. mínima (°C)</Label>
+              <Input type="number" step="0.5" value={form.temp_alarm_min ?? ""} onChange={(e) => setForm({ ...form, temp_alarm_min: e.target.value })} data-testid="edit-fancoil-alarm-min" />
+            </div>
+            <div>
+              <Label className="text-[10px] uppercase">Alarme temp. máxima (°C)</Label>
+              <Input type="number" step="0.5" value={form.temp_alarm_max ?? ""} onChange={(e) => setForm({ ...form, temp_alarm_max: e.target.value })} data-testid="edit-fancoil-alarm-max" />
+            </div>
+          </div>
+          <label className="flex items-center gap-2">
+            <Switch checked={!!form.active} onCheckedChange={(v) => setForm({ ...form, active: v })} data-testid="edit-fancoil-active" />
+            <span className="text-sm">Fancoil ativo</span>
+          </label>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button onClick={save} data-testid="save-fancoil-button">Salvar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
