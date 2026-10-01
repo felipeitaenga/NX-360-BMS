@@ -1,0 +1,506 @@
+"""REST + WebSocket routes."""
+from __future__ import annotations
+import io
+import csv
+import logging
+from datetime import datetime, timezone, timedelta
+from bson import ObjectId
+from fastapi import APIRouter, Depends, HTTPException, Response, Request, UploadFile, File, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
+
+from db import db
+from models import (
+    LoginReq, ChangePasswordReq, ResetPasswordAdminReq, UserCreate, UserUpdate, UserOut,
+    FancoilCreate, FancoilUpdate, FancoilOut, PermissionsUpdate, CommandReq,
+    AlarmAck, SettingsUpdate,
+)
+from auth import (
+    hash_password, verify_password, create_access_token, get_current_user,
+    require_admin, require_operator, get_user_permissions, can_access_fancoil,
+    allowed_fancoil_ids,
+)
+from mqtt_service import svc
+from ws_manager import manager
+
+logger = logging.getLogger("routes")
+router = APIRouter(prefix="/api")
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _user_out(u: dict) -> dict:
+    return {
+        "id": str(u.get("_id") or u.get("id")),
+        "name": u.get("name", ""),
+        "email": u.get("email"),
+        "role": u.get("role", "viewer"),
+        "active": u.get("active", True),
+        "must_change_password": u.get("must_change_password", False),
+        "last_login": u.get("last_login"),
+        "created_at": u.get("created_at"),
+    }
+
+
+def _fancoil_out(fc: dict, state=None) -> dict:
+    st = state or svc.get_state(fc["device_id"])
+    base = {
+        "id": str(fc.get("_id") or fc.get("id")),
+        "name": fc["name"],
+        "device_id": fc["device_id"],
+        "floor": fc["floor"],
+        "side": fc["side"],
+        "description": fc.get("description", ""),
+        "setpoint_min": fc.get("setpoint_min", 18.0),
+        "setpoint_max": fc.get("setpoint_max", 26.0),
+        "temp_alarm_min": fc.get("temp_alarm_min", 15.0),
+        "temp_alarm_max": fc.get("temp_alarm_max", 30.0),
+        "active": fc.get("active", True),
+    }
+    base.update(st.to_dict())
+    base.pop("device_id", None)
+    base["device_id"] = fc["device_id"]
+    return base
+
+
+# =============== AUTH ===============
+@router.post("/auth/login")
+async def login(req: LoginReq, response: Response, request: Request):
+    email = req.email.lower().strip()
+    user = await db.users.find_one({"email": email})
+    if not user or not verify_password(req.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="E-mail ou senha incorretos")
+    if not user.get("active", True):
+        raise HTTPException(status_code=401, detail="Usuário inativo")
+    uid = str(user["_id"])
+    token = create_access_token(uid, user["email"], user["role"])
+    response.set_cookie(
+        "access_token", token, httponly=True, secure=True, samesite="none",
+        max_age=60 * 60 * 8, path="/",
+    )
+    await db.users.update_one({"_id": user["_id"]}, {"$set": {"last_login": now_iso()}})
+    await db.access_log.insert_one({
+        "user_id": uid, "email": email, "action": "login",
+        "ip": request.client.host if request.client else None,
+        "timestamp": now_iso(),
+    })
+    return {
+        "access_token": token,
+        "user": _user_out(user),
+        "must_change_password": user.get("must_change_password", False),
+    }
+
+
+@router.post("/auth/logout")
+async def logout(response: Response, user: dict = Depends(get_current_user)):
+    response.delete_cookie("access_token", path="/")
+    await db.access_log.insert_one({
+        "user_id": user["id"], "email": user["email"], "action": "logout",
+        "timestamp": now_iso(),
+    })
+    return {"ok": True}
+
+
+@router.get("/auth/me")
+async def me(user: dict = Depends(get_current_user)):
+    perms = await get_user_permissions(user["id"])
+    return {"user": _user_out(user), "permissions": perms}
+
+
+@router.post("/auth/change-password")
+async def change_password(req: ChangePasswordReq, user: dict = Depends(get_current_user)):
+    u = await db.users.find_one({"_id": ObjectId(user["id"])})
+    if not verify_password(req.current_password, u["password_hash"]):
+        raise HTTPException(status_code=400, detail="Senha atual incorreta")
+    if len(req.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Nova senha deve ter ao menos 6 caracteres")
+    await db.users.update_one(
+        {"_id": u["_id"]},
+        {"$set": {"password_hash": hash_password(req.new_password), "must_change_password": False}},
+    )
+    return {"ok": True}
+
+
+# =============== USERS (admin) ===============
+@router.get("/users")
+async def list_users(_: dict = Depends(require_admin)):
+    users = await db.users.find({}).to_list(500)
+    return [_user_out(u) for u in users]
+
+
+@router.post("/users")
+async def create_user(req: UserCreate, _: dict = Depends(require_admin)):
+    email = req.email.lower().strip()
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=400, detail="E-mail já cadastrado")
+    doc = {
+        "name": req.name,
+        "email": email,
+        "password_hash": hash_password(req.password),
+        "role": req.role,
+        "active": req.active,
+        "must_change_password": True,
+        "created_at": now_iso(),
+        "last_login": None,
+    }
+    res = await db.users.insert_one(doc)
+    doc["_id"] = res.inserted_id
+    return _user_out(doc)
+
+
+@router.patch("/users/{user_id}")
+async def update_user(user_id: str, req: UserUpdate, _: dict = Depends(require_admin)):
+    upd = {k: v for k, v in req.dict().items() if v is not None}
+    if upd:
+        await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": upd})
+    u = await db.users.find_one({"_id": ObjectId(user_id)})
+    return _user_out(u)
+
+
+@router.post("/users/reset-password")
+async def admin_reset_password(req: ResetPasswordAdminReq, _: dict = Depends(require_admin)):
+    if len(req.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Senha deve ter ao menos 6 caracteres")
+    await db.users.update_one(
+        {"_id": ObjectId(req.user_id)},
+        {"$set": {"password_hash": hash_password(req.new_password), "must_change_password": True}},
+    )
+    return {"ok": True}
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(user_id: str, _: dict = Depends(require_admin)):
+    await db.users.delete_one({"_id": ObjectId(user_id)})
+    await db.permissions.delete_one({"user_id": user_id})
+    return {"ok": True}
+
+
+# =============== PERMISSIONS ===============
+@router.get("/permissions/{user_id}")
+async def get_perms(user_id: str, _: dict = Depends(require_admin)):
+    return await get_user_permissions(user_id)
+
+
+@router.put("/permissions")
+async def set_perms(req: PermissionsUpdate, _: dict = Depends(require_admin)):
+    await db.permissions.update_one(
+        {"user_id": req.user_id},
+        {"$set": {"user_id": req.user_id, "modules": req.modules, "fancoil_ids": req.fancoil_ids}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+# =============== FANCOILS ===============
+@router.get("/fancoils")
+async def list_fancoils(user: dict = Depends(get_current_user)):
+    allowed = await allowed_fancoil_ids(user)
+    cursor = db.fancoils.find({})
+    result = []
+    settings = await db.settings.find_one({"_id": "global"}) or {}
+    hide = settings.get("hide_unauthorized_fancoils", False)
+    async for fc in cursor:
+        fid = str(fc["_id"])
+        out = _fancoil_out(fc)
+        if allowed is None:
+            out["authorized"] = True
+            result.append(out)
+        else:
+            authorized = fid in allowed
+            if hide and not authorized:
+                continue
+            out["authorized"] = authorized
+            result.append(out)
+    return result
+
+
+@router.get("/fancoils/{fancoil_id}")
+async def get_fancoil(fancoil_id: str, user: dict = Depends(get_current_user)):
+    fc = await db.fancoils.find_one({"_id": ObjectId(fancoil_id)})
+    if not fc:
+        raise HTTPException(status_code=404, detail="Fancoil não encontrado")
+    if not await can_access_fancoil(user, fancoil_id):
+        raise HTTPException(status_code=403, detail="Sem permissão para este fancoil")
+    out = _fancoil_out(fc)
+    out["authorized"] = True
+    return out
+
+
+@router.post("/fancoils")
+async def create_fancoil(req: FancoilCreate, _: dict = Depends(require_admin)):
+    if await db.fancoils.find_one({"device_id": req.device_id}):
+        raise HTTPException(status_code=400, detail="device_id já cadastrado")
+    doc = req.dict()
+    doc["created_at"] = now_iso()
+    res = await db.fancoils.insert_one(doc)
+    doc["_id"] = res.inserted_id
+    await db.devices.delete_one({"device_id": req.device_id})
+    return _fancoil_out(doc)
+
+
+@router.patch("/fancoils/{fancoil_id}")
+async def update_fancoil(fancoil_id: str, req: FancoilUpdate, _: dict = Depends(require_admin)):
+    upd = {k: v for k, v in req.dict().items() if v is not None}
+    if upd:
+        await db.fancoils.update_one({"_id": ObjectId(fancoil_id)}, {"$set": upd})
+    fc = await db.fancoils.find_one({"_id": ObjectId(fancoil_id)})
+    return _fancoil_out(fc)
+
+
+@router.delete("/fancoils/{fancoil_id}")
+async def delete_fancoil(fancoil_id: str, _: dict = Depends(require_admin)):
+    await db.fancoils.delete_one({"_id": ObjectId(fancoil_id)})
+    return {"ok": True}
+
+
+@router.post("/fancoils/import")
+async def import_fancoils(file: UploadFile = File(...), _: dict = Depends(require_admin)):
+    content = (await file.read()).decode("utf-8", errors="ignore")
+    reader = csv.DictReader(io.StringIO(content))
+    inserted = 0
+    errors = []
+    for row in reader:
+        try:
+            doc = {
+                "name": row["name"].strip(),
+                "device_id": row["device_id"].strip(),
+                "floor": int(row["floor"]),
+                "side": int(row["side"]),
+                "description": row.get("description", "").strip(),
+                "setpoint_min": float(row.get("setpoint_min", 18.0)),
+                "setpoint_max": float(row.get("setpoint_max", 26.0)),
+                "temp_alarm_min": float(row.get("temp_alarm_min", 15.0)),
+                "temp_alarm_max": float(row.get("temp_alarm_max", 30.0)),
+                "active": True,
+                "created_at": now_iso(),
+            }
+            if await db.fancoils.find_one({"device_id": doc["device_id"]}):
+                errors.append(f"{doc['device_id']}: já existe")
+                continue
+            await db.fancoils.insert_one(doc)
+            inserted += 1
+        except Exception as e:
+            errors.append(f"Linha {row}: {e}")
+    return {"inserted": inserted, "errors": errors}
+
+
+# =============== COMMANDS ===============
+@router.post("/fancoils/{fancoil_id}/command")
+async def send_command(fancoil_id: str, req: CommandReq, user: dict = Depends(get_current_user)):
+    if user["role"] == "viewer":
+        raise HTTPException(status_code=403, detail="Viewer não pode enviar comandos")
+    if not await can_access_fancoil(user, fancoil_id):
+        raise HTTPException(status_code=403, detail="Sem permissão para este fancoil")
+    fc = await db.fancoils.find_one({"_id": ObjectId(fancoil_id)})
+    if not fc:
+        raise HTTPException(status_code=404, detail="Fancoil não encontrado")
+    st = svc.get_state(fc["device_id"])
+    if not st.online:
+        raise HTTPException(status_code=400, detail="Fancoil offline")
+    # Validate CMD only in FORÇADO
+    var_map = {"ESTADO": "ESTADO/SET", "CMD": "CMD/SET", "SETPOINT": "SETPOINT/SET"}
+    var = var_map[req.kind]
+    value = req.value
+    if req.kind == "CMD" and st.estado is True:
+        raise HTTPException(status_code=400, detail="Fancoil em modo AUTOMÁTICO — altere para FORÇADO antes de comandar")
+    if req.kind == "SETPOINT":
+        try:
+            v = float(value)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Setpoint inválido")
+        if v < fc.get("setpoint_min", 10) or v > fc.get("setpoint_max", 35):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Setpoint fora dos limites do cadastro ({fc.get('setpoint_min')}-{fc.get('setpoint_max')} °C)",
+            )
+        value = f"{v:.1f}"
+    if req.kind in ("ESTADO", "CMD"):
+        if value.lower() not in ("true", "false"):
+            raise HTTPException(status_code=400, detail="Valor deve ser true/false")
+        value = value.lower()
+    result = await svc.publish_command(fc["device_id"], var, value, user["id"])
+    return result
+
+
+# =============== ALARMS ===============
+@router.get("/alarms")
+async def list_alarms(active_only: bool = False, limit: int = 500, user: dict = Depends(get_current_user)):
+    q = {}
+    if active_only:
+        q["active"] = True
+    allowed = await allowed_fancoil_ids(user)
+    cursor = db.alarms.find(q).sort("started_at", -1).limit(limit)
+    out = []
+    # Build device_id -> fancoil_id map for permission filter
+    fancoil_map = {}
+    async for fc in db.fancoils.find({}):
+        fancoil_map[fc["device_id"]] = str(fc["_id"])
+    async for a in cursor:
+        did = a["device_id"]
+        if did == "__system__":
+            if user["role"] != "admin":
+                continue
+        else:
+            fid = fancoil_map.get(did)
+            if allowed is not None and (fid is None or fid not in allowed):
+                continue
+        a["id"] = str(a["_id"])
+        a.pop("_id", None)
+        out.append(a)
+    return out
+
+
+@router.post("/alarms/ack")
+async def ack_alarm(req: AlarmAck, user: dict = Depends(get_current_user)):
+    r = await db.alarms.find_one_and_update(
+        {"_id": ObjectId(req.alarm_id)},
+        {"$set": {"acknowledged": True, "acknowledged_by": user["id"], "acknowledged_at": now_iso()}},
+    )
+    if not r:
+        raise HTTPException(status_code=404, detail="Alarme não encontrado")
+    await manager.broadcast("alarm_ack", {"id": req.alarm_id, "by": user["email"]})
+    return {"ok": True}
+
+
+# =============== HISTORY / REPORTS ===============
+@router.get("/history/{fancoil_id}")
+async def get_history(fancoil_id: str, days: int = 1, user: dict = Depends(get_current_user)):
+    if not await can_access_fancoil(user, fancoil_id):
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    fc = await db.fancoils.find_one({"_id": ObjectId(fancoil_id)})
+    if not fc:
+        raise HTTPException(status_code=404, detail="Fancoil não encontrado")
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    cursor = db.history.find({"device_id": fc["device_id"], "timestamp": {"$gte": since}}).sort("timestamp", 1).limit(10000)
+    out = []
+    async for h in cursor:
+        h.pop("_id", None)
+        out.append(h)
+    return out
+
+
+@router.get("/reports/commands")
+async def report_commands(days: int = 7, format: str = "json", user: dict = Depends(get_current_user)):
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    allowed = await allowed_fancoil_ids(user)
+    fancoil_map = {}
+    async for fc in db.fancoils.find({}):
+        fancoil_map[fc["device_id"]] = {"id": str(fc["_id"]), "name": fc["name"]}
+    cursor = db.command_log.find({"timestamp": {"$gte": since}}).sort("timestamp", -1).limit(5000)
+    rows = []
+    async for c in cursor:
+        did = c.get("device_id")
+        fm = fancoil_map.get(did, {"id": None, "name": did})
+        if allowed is not None and fm["id"] not in allowed:
+            continue
+        rows.append({
+            "timestamp": c["timestamp"],
+            "fancoil": fm["name"],
+            "device_id": did,
+            "kind": c.get("kind"),
+            "value": c.get("value"),
+            "previous_value": c.get("previous_value"),
+            "confirmed": c.get("confirmed", False),
+            "user_id": c.get("user_id"),
+        })
+    if format == "csv":
+        buf = io.StringIO()
+        w = csv.DictWriter(buf, fieldnames=list(rows[0].keys()) if rows else ["timestamp", "fancoil"])
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
+        return StreamingResponse(
+            iter([buf.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=log_comandos.csv"},
+        )
+    return rows
+
+
+@router.get("/reports/access-log")
+async def report_access(days: int = 30, _: dict = Depends(require_admin)):
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    cursor = db.access_log.find({"timestamp": {"$gte": since}}).sort("timestamp", -1).limit(2000)
+    rows = []
+    async for a in cursor:
+        a.pop("_id", None)
+        rows.append(a)
+    return rows
+
+
+@router.get("/reports/hours-on")
+async def report_hours_on(days: int = 30, user: dict = Depends(get_current_user)):
+    """Approximate hours ON per fancoil based on history samples (1 min each)."""
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    allowed = await allowed_fancoil_ids(user)
+    results = {}
+    async for fc in db.fancoils.find({}):
+        fid = str(fc["_id"])
+        if allowed is not None and fid not in allowed:
+            continue
+        count = await db.history.count_documents({
+            "device_id": fc["device_id"],
+            "timestamp": {"$gte": since},
+            "status": True,
+        })
+        results[fc["name"]] = round(count / 60.0, 2)  # minutes -> hours
+    return results
+
+
+# =============== ADMIN / SETTINGS ===============
+@router.get("/admin/settings")
+async def get_settings(_: dict = Depends(require_admin)):
+    s = await db.settings.find_one({"_id": "global"}) or {}
+    s.pop("_id", None)
+    s["broker_connected"] = svc.connected
+    s["simulation_enabled"] = s.get("simulation_enabled", True)
+    return s
+
+
+@router.put("/admin/settings")
+async def update_settings(req: SettingsUpdate, _: dict = Depends(require_admin)):
+    upd = {k: v for k, v in req.dict().items() if v is not None}
+    if "broker" in upd and isinstance(upd["broker"], dict) is False:
+        upd["broker"] = upd["broker"]
+    await db.settings.update_one({"_id": "global"}, {"$set": upd}, upsert=True)
+    # restart svc if broker/simulation changed
+    if "broker" in upd or "simulation_enabled" in upd:
+        await svc.restart()
+    s = await db.settings.find_one({"_id": "global"}) or {}
+    s.pop("_id", None)
+    s["broker_connected"] = svc.connected
+    return s
+
+
+@router.get("/admin/detected-devices")
+async def detected_devices(_: dict = Depends(require_admin)):
+    out = []
+    async for d in db.devices.find({}).sort("last_seen", -1):
+        d.pop("_id", None)
+        out.append(d)
+    return out
+
+
+# =============== WEBSOCKET ===============
+@router.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    await manager.connect(ws)
+    try:
+        # Send snapshot
+        fancoils = await db.fancoils.find({}).to_list(500)
+        snapshot = []
+        for fc in fancoils:
+            snapshot.append({
+                "device_id": fc["device_id"],
+                "state": svc.get_state(fc["device_id"]).to_dict(),
+            })
+        import json as _j
+        await ws.send_text(_j.dumps({"event": "snapshot", "data": snapshot}))
+        while True:
+            await ws.receive_text()  # Ignore client msgs
+    except WebSocketDisconnect:
+        await manager.disconnect(ws)
+    except Exception:
+        logger.exception("WS error")
+        await manager.disconnect(ws)

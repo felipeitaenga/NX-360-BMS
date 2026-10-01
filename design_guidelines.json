@@ -1,0 +1,181 @@
+{
+  "project_title": "Pilares HVAC — Supervisório de Fancoils",
+  "app_type": "industrial_scada_building_supervisory",
+  "language": "pt-BR",
+  "design_philosophy": {
+    "theme_style": "Supervisório Industrial Limpo (Clean SCADA / Technical Ergonomics)",
+    "concept": "Precision Industrial Automation meets Swiss Technical Clarity. High scannability, functional contrast, status-driven visual hierarchy, zero fluff.",
+    "theme_support": {
+      "default_mode": "dark",
+      "toggle_enabled": true,
+      "modes": ["light", "dark"]
+    }
+  },
+  "typography": {
+    "font_family_heading": "Chivo, sans-serif",
+    "font_family_body": "IBM Plex Sans, sans-serif",
+    "font_family_mono": "IBM Plex Mono, monospace",
+    "google_fonts_url": "https://fonts.googleapis.com/css2?family=Chivo:ital,wght@0,400;0,600;0,700;0,900;1,400&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap",
+    "hierarchy": {
+      "h1_hero": "text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-none uppercase",
+      "h2_section": "text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100",
+      "h3_card_title": "text-base sm:text-lg font-semibold tracking-normal text-slate-800 dark:text-slate-200",
+      "body": "text-sm sm:text-base font-normal leading-relaxed text-slate-600 dark:text-slate-300",
+      "mono_data": "font-mono text-xs sm:text-sm font-medium tracking-wider uppercase text-cyan-700 dark:text-cyan-400"
+    }
+  },
+  "colors": {
+    "dark_theme": {
+      "background_page": "#0b0f17",
+      "background_card": "#131b2e",
+      "background_card_hover": "#1c2740",
+      "border": "#212e4a",
+      "foreground": "#f1f5f9",
+      "muted_foreground": "#94a3b8",
+      "primary_petroleum": "#0284c7",
+      "primary_hover": "#0369a1",
+      "sidebar_bg": "#080c14",
+      "sidebar_border": "#1e293b",
+      "accent": "#0f766e"
+    },
+    "light_theme": {
+      "background_page": "#f8fafc",
+      "background_card": "#ffffff",
+      "background_card_hover": "#f1f5f9",
+      "border": "#e2e8f0",
+      "foreground": "#0f172a",
+      "muted_foreground": "#64748b",
+      "primary_petroleum": "#0369a1",
+      "primary_hover": "#075985",
+      "sidebar_bg": "#0f172a",
+      "sidebar_border": "#1e293b",
+      "accent": "#0d9488"
+    },
+    "status_colors": {
+      "on_emerald": {
+        "hex": "#10b981",
+        "bg_dark": "rgba(16, 185, 129, 0.15)",
+        "border_dark": "#059669",
+        "text": "#34d399",
+        "label": "EM OPERAÇÃO (LIGADO)"
+      },
+      "off_gray": {
+        "hex": "#64748b",
+        "bg_dark": "rgba(100, 116, 139, 0.15)",
+        "border_dark": "#475569",
+        "text": "#94a3b8",
+        "label": "DESLIGADO"
+      },
+      "alarm_red": {
+        "hex": "#ef4444",
+        "bg_dark": "rgba(239, 68, 68, 0.2)",
+        "border_dark": "#dc2626",
+        "text": "#f87171",
+        "animation": "animate-pulse border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)]",
+        "label": "ALARME ATIVO"
+      },
+      "forced_amber": {
+        "hex": "#f59e0b",
+        "bg_dark": "rgba(245, 158, 11, 0.15)",
+        "border_dark": "#d97706",
+        "text": "#fbbf24",
+        "label": "MODO FORÇADO (MANUAL)"
+      },
+      "offline_faded": {
+        "hex": "#334155",
+        "bg_dark": "rgba(51, 65, 85, 0.3)",
+        "border_dark": "#1e293b",
+        "text": "#64748b",
+        "label": "SEM COMUNICAÇÃO"
+      }
+    }
+  },
+  "sidebar_and_navigation": {
+    "desktop": "Fixed 260px left sidebar, dark petroleum slate (#080c14), sharp high-contrast border-r (#1e293b)",
+    "mobile": "Sticky top bar with branding + hamburger toggle opening a drawer OR fixed bottom bar on small devices",
+    "icons": {
+      "library": "lucide-react",
+      "size": "w-6 h-6",
+      "active_state": "bg-sky-600/20 text-sky-400 border-l-4 border-sky-500 font-semibold",
+      "inactive_state": "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+    },
+    "menu_items": [
+      { "id": "home", "label": "Início", "icon": "LayoutDashboard", "path": "/" },
+      { "id": "fancoils", "label": "Ar Condicionado", "icon": "Wind", "path": "/fancoils" },
+      { "id": "lighting", "label": "Iluminação", "icon": "Lightbulb", "path": "/iluminacao" },
+      { "id": "hydraulics", "label": "Hidráulica", "icon": "Droplets", "path": "/hidraulica" },
+      { "id": "reports", "label": "Relatórios", "icon": "FileText", "path": "/relatorios" },
+      { "id": "alarms", "label": "Alarmes", "icon": "BellAlert", "path": "/alarmes" },
+      { "id": "admin", "label": "Administração", "icon": "Settings", "path": "/admin" }
+    ]
+  },
+  "svg_hvac_schematic": {
+    "component_name": "FancoilSchematicSVG",
+    "flow_direction": "Retorno (Esquerda) -> Filtro G4 -> Serpenteador (Serpentina/Válvula VAG) -> Ventilador -> Insuflamento (Direita)",
+    "interactive_elements": {
+      "fan_rotor": {
+        "class_on": "animate-[spin_2s_linear_infinite]",
+        "class_off": "opacity-50",
+        "center_label": "RPM / %"
+      },
+      "airflow_arrows": {
+        "class_active": "animate-[pulse_1.5s_ease-in-out_infinite] text-sky-400",
+        "gradient": "from-blue-500 via-sky-400 to-cyan-300"
+      },
+      "valve_indicator": {
+        "vag_percentage_display": "Badge showing 0-100% opening with color gradient",
+        "water_pipe_cold": "stroke-blue-500 stroke-[3px]"
+      },
+      "temperature_sensors": {
+        "t_retorno": "Sensor T_RET (°C) at air return duct",
+        "t_insuflamento": "Sensor T_INS (°C) at supply duct",
+        "setpoint_badge": "Target SP in high-visibility digital box"
+      }
+    }
+  },
+  "key_modules_and_pages": {
+    "login": "Login with JWT support, simulation shortcut, and mandatory first-time password change modal",
+    "dashboard_home": "General building elevation with dual column fancoil matrix (Left = Lado 1, Right = Lado 2, sorted Top 20th floor down to Ground Floor 1st floor). Top key metric cards: Total Fancoils, Ligados, Forçados, Offline, Alarmes Ativos, Temp Média.",
+    "fancoil_general_view": "Interactive building schematic view with instant filter (By floor, status, or search CJ171). Side 1 (Lado 1) and Side 2 (Lado 2) alignment with live green/red/amber status dots.",
+    "fancoil_detail_view": "Animated HVAC SVG schematic, live telemetry panel (CONDIÇÃO, QUADRO, OPERAÇÃO, COMANDO, STATUS, TEMPERATURA, SETPOINT, VÁLVULA VAG %, COMUNICAÇÃO), setpoint control +/-0.5°C, Auto/Forçado toggle, ON/OFF command, and 24h/7d/30d Recharts historical trend graph.",
+    "alarms_module": "Active alarm table with blinking red severity, acknowledgement button (Reconhecer Alarme), filter by date, floor, or status.",
+    "reports_module": "Tabbed reports: Log de Comandos, Histórico de Temperatura, Horas de Funcionamento, Log de Acesso. Export CSV button.",
+    "admin_panel": "User management (Admin, Operador, Visualizador), Fancoil cadastral registry (CJ+andar+lado), MQTT Broker Configuration panel, Simulation Mode toggle switch, and Building Image upload setting."
+  },
+  "media_assets": {
+    "building_image_url": "https://images.unsplash.com/photo-1528810289438-283f885c31ef?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "fancoil_unit_thumb": "https://images.unsplash.com/photo-1619218070141-bcfeb8b93074?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "logo_text": "PILARES HVAC",
+    "subtitle": "Supervisório de Fancoils"
+  },
+  "testing_attributes": {
+    "rule": "Every interactive button, input, toggle, tab, link, table row, and metric card MUST include data-testid",
+    "naming_convention": "kebab-case starting with role or action",
+    "examples": [
+      "data-testid='login-username-input'",
+      "data-testid='login-submit-button'",
+      "data-testid='fancoil-card-cj171'",
+      "data-testid='fancoil-power-toggle'",
+      "data-testid='setpoint-increment-button'",
+      "data-testid='alarm-acknowledge-button'",
+      "data-testid='simulation-mode-switch'",
+      "data-testid='theme-toggle-button'"
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Build a high-performance Portuguese-Brazilian (pt-BR) supervisory application.",
+    "Ensure simulation mode is enabled by default so data flows dynamically immediately on launch.",
+    "Strictly follow JavaScript/React .js and .jsx syntax rules.",
+    "Use Lucide-React icons extensively with explicit sizes and stroke widths for a clean industrial SCADA feel.",
+    "Ensure all buttons and inputs are easily clickable with clear hover state contrast.",
+    "Implement Sonner for crisp industrial toast notifications (e.g., 'Comando enviado ao CJ171 com sucesso', 'Modo Simulação Ativado').",
+    "Do NOT use pure transparent backgrounds on header, dropdown menus, or modal overlays; use dark slate with backdrop blur."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Dark colors look best with solid dark slate backgrounds, avoid dirty full-screen color gradients.",
+    "Ensure 2x-3x padding inside cards and bordered sections so technical data text never collides with edges.",
+    "Maintain strict APCA high contrast for status badges, temperature readings, and SCADA indicators.",
+    "Never use raw emoji as system icons. Use lucide-react vector icons.",
+    "All interactive and key informational elements MUST include data-testid attributes."
+  ]
+}

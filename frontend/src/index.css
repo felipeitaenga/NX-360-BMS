@@ -1,0 +1,172 @@
+@import url("https://fonts.googleapis.com/css2?family=Chivo:ital,wght@0,400;0,600;0,700;0,900;1,400&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    margin: 0;
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+}
+
+code,
+.font-mono {
+    font-family: "IBM Plex Mono", monospace;
+}
+
+.font-display {
+    font-family: "Chivo", sans-serif;
+    letter-spacing: -0.01em;
+}
+
+@layer base {
+    :root {
+        /* Light SCADA */
+        --background: 210 40% 97%;
+        --foreground: 222 47% 11%;
+        --card: 0 0% 100%;
+        --card-foreground: 222 47% 11%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 222 47% 11%;
+        --primary: 201 94% 32%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 210 40% 94%;
+        --secondary-foreground: 222 47% 11%;
+        --muted: 210 40% 94%;
+        --muted-foreground: 215 16% 47%;
+        --accent: 173 80% 36%;
+        --accent-foreground: 0 0% 100%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 214 32% 89%;
+        --input: 214 32% 89%;
+        --ring: 201 94% 32%;
+        --radius: 0.5rem;
+        --sidebar-bg: 222 47% 11%;
+        --sidebar-fg: 210 40% 96%;
+        --sidebar-border: 217 33% 20%;
+    }
+
+    .dark {
+        /* Industrial SCADA Dark */
+        --background: 220 40% 7%;
+        --foreground: 210 40% 96%;
+        --card: 221 36% 12%;
+        --card-foreground: 210 40% 96%;
+        --popover: 221 36% 12%;
+        --popover-foreground: 210 40% 96%;
+        --primary: 199 89% 48%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 220 30% 17%;
+        --secondary-foreground: 210 40% 96%;
+        --muted: 220 30% 17%;
+        --muted-foreground: 215 20% 65%;
+        --accent: 173 80% 36%;
+        --accent-foreground: 0 0% 100%;
+        --destructive: 0 72% 51%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 220 30% 20%;
+        --input: 220 30% 20%;
+        --ring: 199 89% 48%;
+        --sidebar-bg: 222 47% 4%;
+        --sidebar-fg: 210 40% 96%;
+        --sidebar-border: 217 33% 15%;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+    body {
+        @apply bg-background text-foreground;
+    }
+    h1,
+    h2,
+    h3,
+    h4 {
+        font-family: "Chivo", sans-serif;
+    }
+}
+
+/* Status dot animations */
+@keyframes pulse-red {
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+    }
+    50% {
+        box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+    }
+}
+
+.pulse-red {
+    animation: pulse-red 1.4s ease-in-out infinite;
+}
+
+@keyframes spin-slow {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.spin-fan {
+    animation: spin-slow 1.2s linear infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+@keyframes flow-arrows {
+    0% {
+        stroke-dashoffset: 32;
+    }
+    100% {
+        stroke-dashoffset: 0;
+    }
+}
+
+.flow-arrows {
+    stroke-dasharray: 8 8;
+    animation: flow-arrows 1.2s linear infinite;
+}
+
+.scada-grid-bg {
+    background-image:
+        linear-gradient(
+            hsl(var(--border) / 0.4) 1px,
+            transparent 1px
+        ),
+        linear-gradient(
+            90deg,
+            hsl(var(--border) / 0.4) 1px,
+            transparent 1px
+        );
+    background-size: 32px 32px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+::-webkit-scrollbar-track {
+    background: hsl(var(--muted));
+}
+::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.6);
+}
+
+[data-debug-wrapper="true"] {
+    display: contents !important;
+}
