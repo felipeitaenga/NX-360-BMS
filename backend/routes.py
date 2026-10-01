@@ -241,10 +241,17 @@ async def create_fancoil(req: FancoilCreate, _: dict = Depends(require_admin)):
 
 @router.patch("/fancoils/{fancoil_id}")
 async def update_fancoil(fancoil_id: str, req: FancoilUpdate, _: dict = Depends(require_admin)):
+    try:
+        oid = ObjectId(fancoil_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Fancoil não encontrado")
+    fc = await db.fancoils.find_one({"_id": oid})
+    if not fc:
+        raise HTTPException(status_code=404, detail="Fancoil não encontrado")
     upd = {k: v for k, v in req.dict().items() if v is not None}
     if upd:
-        await db.fancoils.update_one({"_id": ObjectId(fancoil_id)}, {"$set": upd})
-    fc = await db.fancoils.find_one({"_id": ObjectId(fancoil_id)})
+        await db.fancoils.update_one({"_id": oid}, {"$set": upd})
+    fc = await db.fancoils.find_one({"_id": oid})
     return _fancoil_out(fc)
 
 

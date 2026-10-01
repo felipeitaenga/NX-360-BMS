@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration-3: Validated the new Admin → Fancoils EDIT feature (PATCH /api/fancoils/{id} + EditFancoilDialog). Backend: 5/5 pytest cases passing (partial PATCH persists via GET, full payload persists all 4 setpoint/alarm fields + description, viewer and operator both get 403, DB state restored to original CJ011 values). Frontend (Playwright): admin login → Admin → Fancoils tab shows edit + delete buttons on every row (edit-fancoil-cj011 and delete-fancoil-cj011 both present), clicking edit opens edit-fancoil-dialog with device_id shown as read-only text (SIM0101), description/sp-max edited, save-fancoil-button closes the dialog, toast 'Fancoil atualizado' appears, change persists after full page reload, delete button still visible after edit. Original description was restored at the end to leave DB clean.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "EditFancoilDialog (and other DialogContents)", "issues": ["React a11y warning: 'Missing Description or aria-describedby for {DialogContent}'. Add <DialogDescription> or aria-describedby to silence and improve a11y. Non-blocking."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_fancoil_edit.py",
+    "/app/test_reports/pytest/pytest_fancoil_edit.xml"
+  ],
+  "action_items": [
+    "Optional a11y improvement: add <DialogDescription> to EditFancoilDialog (and other DialogContent components) to remove the 'Missing Description or aria-describedby' React warning.",
+    "Note: PATCH on a non-existent fancoil_id currently crashes with 500 (InvalidId) if the id is not a valid ObjectId — not covered in review scope; existing behaviour. If a valid-shape but non-existent ObjectId is passed, _fancoil_out(None) would also crash. Consider adding a 404 guard in update_fancoil similar to get_fancoil."
+  ],
+  "critical_code_review_comments": [
+    "routes.py update_fancoil: no 404 guard — if fancoil_id doesn't exist, db.fancoils.find_one returns None and _fancoil_out(None) will throw a 500. Low risk (admin-only + id comes from UI list), but worth adding `if not fc: raise HTTPException(404)` for robustness.",
+    "Admin.jsx EditFancoilDialog: duplicate pattern vs CreateFancoil form; consider extracting a shared FancoilForm. Not blocking.",
+    "Admin.jsx EditFancoilDialog: parseInt/parseFloat on possibly empty strings would send NaN — currently guarded by number inputs with sane defaults, but add explicit validation for a cleaner UX.",
+    "Admin.jsx EditFancoilDialog: device_id correctly shown as read-only informative line (not an input) — matches spec."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fancoil_edit.py (new)",
+    "/app/test_reports/pytest/pytest_fancoil_edit.xml (new)"
+  ],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "100% of exercised flows"},
+  "test_credentials": "Admin felipejferreira@gmail.com / NovaSenha123 (unchanged after tests).",
+  "seed_data_creation": "Transient test viewer and operator users (TEST_ prefix) created and deleted within the suite. CJ011 fancoil was mutated during tests and restored to original description/setpoints at the end (both via pytest teardown step and via frontend restore step).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Edit flow confirmed working end-to-end. Testids: edit-fancoil-<name_lower>, delete-fancoil-<name_lower>, edit-fancoil-dialog, edit-fancoil-{name,description,floor,side,sp-min,sp-max,alarm-min,alarm-max,active}, save-fancoil-button. PATCH /api/fancoils/{id} requires admin; viewer/operator → 403. Run tests with: `REACT_APP_BACKEND_URL=... python -m pytest backend/tests/test_fancoil_edit.py -o addopts=''` to disable xdist (default pytest.ini uses -n auto which collects nothing when module-scope fixtures have cross-test state).",
+  "rca of the issue": "Original user complaint ('não tem opção de editar' on Administração → Fancoils) is fully fixed. UI now renders a pencil (edit) button next to the trash (delete) icon per row and opens a shadcn Dialog with editable name/description/floor/side/setpoints/alarms/active; device_id is intentionally read-only. Backend PATCH endpoint persists updates and enforces admin-only via require_admin."
+}
