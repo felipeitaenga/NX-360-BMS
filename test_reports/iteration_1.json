@@ -1,0 +1,37 @@
+{
+  "summary": "First-iteration end-to-end test of Pilares HVAC Supervisório (FastAPI + React + MongoDB with MQTT simulation). Backend: 24/24 pytest cases pass covering auth (login, change-password, me), fancoils (32 seeded CJ011..CJ172 w/o floor 13, SIM device_ids), commands (ESTADO forçado + CMD true -> status=true, CMD-in-AUTO 400, setpoint valid/out-of-range), admin (users CRUD, permissions, settings GET/PUT, detected-devices), alarms list, reports (commands JSON+CSV, hours-on, access-log), WebSocket snapshot+telemetry, and role-based 403s for viewer. Frontend: login w/ admin -> dashboard (metric cards populated via WS: 32/32 online, 1 forçado, 0 offline, 0 alarmes, 18.0°C), all 7 sidebar nav links present, /ar-condicionado renders 32 fancoil-card-cj* cards, detail page toggles ESTADO->Forçado + CMD->Ligar (indicator-comando=DESLIGAR after toggle), setpoint increment+apply works, range tabs 24h/7d/30d switch; Alarms page renders; Admin tabs Usuários/Fancoils/Broker e Parâmetros open; theme toggle works.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "FancoilDetail", "issues": ["Recharts prints repeated console warnings 'width(-1) and height(-1) of chart should be greater than 0' when the chart container has no explicit minHeight. Non-blocking but noisy — add minHeight to ResponsiveContainer or parent."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_backend.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Optional: fix Recharts width/height warning on FancoilDetail by setting an explicit minHeight on the chart container.",
+    "Note: admin password was changed from 'Admin@123' to 'NovaSenha123' during tests. /app/memory/test_credentials.md has been updated."
+  ],
+  "critical_code_review_comments": [
+    "routes.py.send_command: good domain validation (CMD blocked in AUTOMÁTICO, setpoint range enforced using fancoil-level min/max).",
+    "auth.py uses bcrypt hash + httpOnly secure cookie with SameSite=None, plus Bearer fallback — matches auth playbook basics. No brute-force lockout implemented (not in scope for MVP but worth noting).",
+    "seed.py.seed_admin: ensures role=admin and active=True on existing admin but does NOT reset password if admin password changes in env (idempotent as expected per spec).",
+    "routes.py._fancoil_out: safely strips Mongo _id and reinjects device_id — avoids ObjectId serialization pitfalls.",
+    "routes.py.report_commands CSV path with empty rows writes only two header columns ('timestamp','fancoil') — minor edge case but acceptable."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_backend.py (new)",
+    "/app/memory/test_credentials.md (updated admin password note)"
+  ],
+  "success_rate": {"backend": "100% (24/24)", "frontend": "100% of exercised flows"},
+  "test_credentials": "Admin felipejferreira@gmail.com / NovaSenha123 (changed from Admin@123 during test). To restore first-run behavior, drop db.users and restart backend.",
+  "seed_data_creation": "No persistent test data created; TEST viewer user was created and deleted within the test suite. Admin password was changed to NovaSenha123 (persisted).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend tests live in /app/backend/tests/test_backend.py and must be run with `-n 0` to override the project-wide xdist loadscope config (otherwise sequential STATE between tests breaks). Admin credentials have been rotated; use NovaSenha123. Websocket URL pattern: wss://<host>/api/ws. Fancoil detail page uses testids: toggle-estado-button, confirm-estado, fancoil-power-toggle, confirm-cmd, setpoint-increment-button, setpoint-apply-button, indicator-comando, range-24h/7d/30d. Admin page tab labels are PT: Usuários, Fancoils, 'Broker e Parâmetros'.",
+  "rca of the issue": "No functional issues found. Initial test-run false negatives were due to (a) test comparing email case-sensitively while backend lowercases, (b) assertion before STATE assignment causing cascade. Both corrected."
+}

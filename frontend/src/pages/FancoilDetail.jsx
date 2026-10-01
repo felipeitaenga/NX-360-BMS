@@ -276,8 +276,8 @@ export default function FancoilDetail() {
             ))}
           </div>
         </div>
-        <div className="h-72">
-          <ResponsiveContainer width="100%" height="100%">
+        <div style={{ width: "100%", height: 288, minHeight: 240 }}>
+          <ResponsiveContainer width="100%" height="100%" minHeight={240}>
             <LineChart data={chartData}>
               <CartesianGrid strokeOpacity={0.15} />
               <XAxis dataKey="t" fontSize={10} tick={{ fill: "currentColor" }} hide={chartData.length > 48} />
