@@ -6,6 +6,10 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "../components/ui/alert-dialog";
 import { toast } from "sonner";
 import { Clock, Plus, Trash2 } from "lucide-react";
 
@@ -42,10 +46,10 @@ export default function SchedulesPanel({ fancoilId, canEdit }) {
   };
 
   const remove = async (id) => {
-    if (!window.confirm("Remover agendamento?")) return;
     try {
       await api.delete(`/schedules/${id}`);
       qc.invalidateQueries({ queryKey: ["schedules", fancoilId] });
+      toast.success("Agendamento removido");
     } catch (e) {
       toast.error(formatApiError(e));
     }
@@ -104,9 +108,27 @@ export default function SchedulesPanel({ fancoilId, canEdit }) {
             {canEdit && (
               <>
                 <Switch checked={s.enabled} onCheckedChange={() => toggle(s)} data-testid={`schedule-toggle-${s.id}`} />
-                <Button size="icon" variant="outline" onClick={() => remove(s.id)} data-testid={`schedule-remove-${s.id}`}>
-                  <Trash2 className="w-4 h-4" />
-                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button size="icon" variant="outline" data-testid={`schedule-remove-${s.id}`}>
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Remover agendamento?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Esta ação remove o agendamento {String(s.hour).padStart(2, "0")}:{String(s.minute).padStart(2, "0")} ({s.action}={s.value}).
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                      <AlertDialogAction data-testid={`schedule-remove-confirm-${s.id}`} onClick={() => remove(s.id)}>
+                        Remover
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </>
             )}
           </div>
@@ -146,10 +168,10 @@ export default function SchedulesPanel({ fancoilId, canEdit }) {
               {form.action === "setpoint" ? (
                 <Input type="number" step="0.5" value={form.value}
                        onChange={(e) => setForm({ ...form, value: e.target.value })}
-                       data-testid="schedule-value" />
+                       data-testid="schedule-value-number" />
               ) : (
                 <Select value={form.value} onValueChange={(v) => setForm({ ...form, value: v })}>
-                  <SelectTrigger data-testid="schedule-value"><SelectValue /></SelectTrigger>
+                  <SelectTrigger data-testid="schedule-value-select"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="true">{form.action === "estado" ? "AUTOMÁTICO" : "LIGAR"}</SelectItem>
                     <SelectItem value="false">{form.action === "estado" ? "FORÇADO" : "DESLIGAR"}</SelectItem>

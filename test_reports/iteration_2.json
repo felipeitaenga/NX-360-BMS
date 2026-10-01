@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration-2 test of the four new features: password reset (forgot + reset flows), schedules CRUD + role gating, heatmap endpoint, and the new frontend pages/components (ForgotPassword, ResetPassword, MapaCalor, SchedulesPanel, sound toggle). Backend: 14/14 pytest cases pass (including SHA256-based token injection + full reset flow + viewer 403 on schedules + 32-cell heatmap for admin + empty heatmap for viewer with no perms). Frontend (Playwright): login page shows forgot-password-link that navigates to /esqueci-senha; forgot submission returns generic message; /redefinir-senha without token shows reset-no-token; with token=xxx renders form; after admin login the sidebar shows nav-heatmap + sound-toggle-button; /mapa-calor renders 32 cells and cell click navigates to detail; FancoilDetail shows SchedulesPanel with schedule-hour/minute/action/value/day inputs; creating a schedule adds a row with schedule-toggle-* and schedule-remove-*; toggle works; theme toggle still works.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Schedule delete via UI", "issue": "SchedulesPanel.remove() uses window.confirm which Playwright does not auto-accept. The DELETE itself works (verified via pytest). For a better UX and testability, replace native confirm with a shadcn AlertDialog or auto-register a page.on('dialog') handler. Non-blocking.", "affected_selectors": ["schedule-remove-*"]}
+    ],
+    "design_issues": [
+      {"screen": "FancoilDetail", "issues": ["Recharts width/height(-1) warning persists from iteration 1; still non-blocking. Add minHeight to ResponsiveContainer parent to silence."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_new_features.py",
+    "/app/backend/tests/test_backend.py",
+    "/app/test_reports/pytest/pytest_new_features.xml"
+  ],
+  "action_items": [
+    "Optional: replace native window.confirm in SchedulesPanel with a shadcn AlertDialog for consistent UX and automatable tests.",
+    "Optional: fix Recharts minHeight warning (carry-over from iteration 1).",
+    "Note: admin password remained NovaSenha123. The reset-flow test rotates the password through two injected tokens and ends by resetting back to NovaSenha123 — db state preserved."
+  ],
+  "critical_code_review_comments": [
+    "password_reset.py: correct hashing (sha256 of raw token stored as token_hash; raw token NEVER persisted). Response for registered vs unknown emails is identical. Rate limit (>5 in 15min) returns the same generic body without inserting a token — good. Reset marks used=true atomically via find_one_and_update, and purges other outstanding tokens for the same user after use. Email proxy failure is logged but does not leak via response body.",
+    "scheduler.py: 30s loop; weekday mapping uses Sun=0..Sat=6 convention consistent with frontend; double-run guard via last_run timestamp (<55s). Uses Brasília UTC-3 computed from datetime.now(utc) - 3h — ok for simulation but will break at DST boundaries if BR ever reinstates DST; consider zoneinfo('America/Sao_Paulo') for future-proofing.",
+    "routes.py SCHEDULES: all CRUD routes enforce can_access_fancoil and viewer 403 on write ops. Good.",
+    "routes.py HEATMAP: filters by allowed_fancoil_ids, returns online/temperature/setpoint/status — matches spec. Admin returns all 32 cells; viewer with no perms returns [].",
+    "SchedulesPanel.jsx: duplicate data-testid='schedule-value' is applied to BOTH the Input and SelectTrigger (lines 149 and 152). Minor issue (only one renders at a time based on action), but duplicate testids can confuse selectors.",
+    "SchedulesPanel.jsx uses window.confirm (not consistent with shadcn-based UX elsewhere)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_new_features.py (new)",
+    "/app/test_reports/pytest/pytest_new_features.xml"
+  ],
+  "success_rate": {"backend": "100% (14/14 new + prior 24/24 unchanged)", "frontend": "100% of exercised flows (schedule-delete UI uses native confirm; functional via API)"},
+  "test_credentials": "Admin felipejferreira@gmail.com / NovaSenha123 (unchanged after tests). Reset-flow test rotated through two injected sha256 tokens and reset back to NovaSenha123.",
+  "seed_data_creation": "Transient test viewers created and deleted within the suite (TEST_ prefix). One UI-created schedule was deleted post-run directly from Mongo to leave state clean.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run with `pytest -n 0` to avoid xdist parallelism (test state is shared). To test full reset flow, inject {token_hash: sha256(raw).hexdigest(), user_id: str(ObjectId), email, expires_at, used:false} directly into db.password_reset_tokens (raw token never stored). Rate-limit test depends on password_reset_requests collection — the test clears it before running. SchedulesPanel uses window.confirm for delete; register page.on('dialog', lambda d: d.accept()) in Playwright if testing deletion via UI. Testids: forgot-password-link, forgot-email-input, forgot-submit-button, reset-password-input, reset-password-confirm, reset-submit-button, reset-no-token, nav-heatmap, sound-toggle-button, mapa-calor-page, heatmap-<name>, schedule-hour/minute/action/value, schedule-day-{0..6}, schedule-create-button, schedule-row-{id}, schedule-toggle-{id}, schedule-remove-{id}.",
+  "rca of the issue": "No functional issues. Two cosmetic/minor observations: (1) native window.confirm in SchedulesPanel is not Playwright-friendly, (2) duplicate data-testid='schedule-value' across Input and SelectTrigger."
+}
