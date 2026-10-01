@@ -144,3 +144,23 @@ class SettingsUpdate(BaseModel):
     hide_unauthorized_fancoils: Optional[bool] = None
     building_image_url: Optional[str] = None
     logo_url: Optional[str] = None
+
+
+# -------- Schedules --------
+class ScheduleCreate(BaseModel):
+    fancoil_id: str
+    days: List[int] = Field(default_factory=list)  # 0=Sun..6=Sat; empty=all
+    hour: int
+    minute: int
+    action: Literal["estado", "cmd", "setpoint"]
+    value: str
+    enabled: bool = True
+
+
+class ScheduleUpdate(BaseModel):
+    days: Optional[List[int]] = None
+    hour: Optional[int] = None
+    minute: Optional[int] = None
+    action: Optional[Literal["estado", "cmd", "setpoint"]] = None
+    value: Optional[str] = None
+    enabled: Optional[bool] = None

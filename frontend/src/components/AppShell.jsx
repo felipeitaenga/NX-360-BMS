@@ -2,10 +2,11 @@ import React, { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Wind, Lightbulb, Droplets, FileText, Siren, Settings,
-  LogOut, Sun, Moon, Menu, X,
+  LogOut, Sun, Moon, Menu, X, Thermometer, Volume2, VolumeX,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
+import { useSound } from "../context/SoundContext";
 import { useTelemetry } from "../context/TelemetryContext";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
@@ -13,6 +14,7 @@ import { api } from "../lib/api";
 const ITEMS = [
   { id: "home", label: "Início", icon: LayoutDashboard, path: "/", module: "home" },
   { id: "fancoils", label: "Ar Condicionado", icon: Wind, path: "/ar-condicionado", module: "ar_condicionado" },
+  { id: "heatmap", label: "Mapa de Calor", icon: Thermometer, path: "/mapa-calor", module: "ar_condicionado" },
   { id: "lighting", label: "Iluminação", icon: Lightbulb, path: "/iluminacao", module: "iluminacao" },
   { id: "hydraulics", label: "Hidráulica", icon: Droplets, path: "/hidraulica", module: "hidraulica" },
   { id: "reports", label: "Relatórios", icon: FileText, path: "/relatorios", module: "relatorios" },
@@ -30,6 +32,7 @@ function moduleAllowed(user, perms, item) {
 export default function AppShell({ children }) {
   const { user, perms, logout } = useAuth();
   const { theme, toggle } = useTheme();
+  const { enabled: soundEnabled, toggle: toggleSound } = useSound();
   const { alarmsBump } = useTelemetry();
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
@@ -107,6 +110,16 @@ export default function AppShell({ children }) {
               {theme === "dark" ? "Claro" : "Escuro"}
             </button>
             <button
+              data-testid="sound-toggle-button"
+              onClick={toggleSound}
+              title={soundEnabled ? "Som ligado" : "Som desligado"}
+              className={`flex items-center justify-center gap-1 px-3 py-2 rounded-md text-xs ${
+                soundEnabled ? "bg-emerald-900/40 text-emerald-200" : "bg-slate-800/60 text-slate-400"
+              }`}
+            >
+              {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
+            <button
               data-testid="logout-button"
               onClick={async () => { await logout(); navigate("/login"); }}
               className="flex-1 flex items-center justify-center gap-2 py-2 rounded-md bg-red-900/40 hover:bg-red-900/60 text-red-200 text-xs"
@@ -133,6 +146,9 @@ export default function AppShell({ children }) {
               {activeAlarms.length}
             </span>
           )}
+          <button onClick={toggleSound} data-testid="sound-toggle-mobile" className="p-2 text-slate-200">
+            {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+          </button>
           <button onClick={toggle} data-testid="theme-toggle-mobile" className="p-2 text-slate-200">
             {theme === "dark" ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>

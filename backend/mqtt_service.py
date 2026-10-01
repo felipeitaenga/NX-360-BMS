@@ -103,6 +103,10 @@ class MQTTService:
         if not self._alarm_task:
             from alarms import run_alarm_engine
             self._alarm_task = asyncio.create_task(run_alarm_engine(self))
+        # Start scheduler
+        if not hasattr(self, "_sched_task") or not self._sched_task:
+            from scheduler import run_scheduler
+            self._sched_task = asyncio.create_task(run_scheduler(self))
 
     async def restart(self):
         await self.stop()

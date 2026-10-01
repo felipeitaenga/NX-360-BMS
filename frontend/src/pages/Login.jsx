@@ -89,6 +89,11 @@ export default function Login() {
           >
             {loading ? "Entrando..." : "Entrar"}
           </Button>
+          <div className="text-center">
+            <a href="/esqueci-senha" data-testid="forgot-password-link" className="text-xs text-sky-400 hover:underline">
+              Esqueci minha senha
+            </a>
+          </div>
         </form>
 
         <div className="mt-6 pt-6 border-t border-slate-800 text-center text-xs text-slate-500 font-mono uppercase tracking-widest">

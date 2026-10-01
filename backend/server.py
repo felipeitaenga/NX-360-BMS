@@ -14,6 +14,7 @@ from db import ensure_indexes
 from seed import run_all_seeds
 from mqtt_service import svc
 from routes import router
+from password_reset import router as pwd_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("app")
@@ -34,6 +35,7 @@ app.add_middleware(
 )
 
 app.include_router(router)
+app.include_router(pwd_router)
 
 
 @app.on_event("startup")

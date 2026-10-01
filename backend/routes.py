@@ -12,7 +12,7 @@ from db import db
 from models import (
     LoginReq, ChangePasswordReq, ResetPasswordAdminReq, UserCreate, UserUpdate, UserOut,
     FancoilCreate, FancoilUpdate, FancoilOut, PermissionsUpdate, CommandReq,
-    AlarmAck, SettingsUpdate,
+    AlarmAck, SettingsUpdate, ScheduleCreate, ScheduleUpdate,
 )
 from auth import (
     hash_password, verify_password, create_access_token, get_current_user,
@@ -480,6 +480,103 @@ async def detected_devices(_: dict = Depends(require_admin)):
         d.pop("_id", None)
         out.append(d)
     return out
+
+
+# =============== SCHEDULES ===============
+def _schedule_out(s: dict) -> dict:
+    return {
+        "id": str(s["_id"]),
+        "fancoil_id": s["fancoil_id"],
+        "days": s.get("days", []),
+        "hour": s["hour"],
+        "minute": s["minute"],
+        "action": s["action"],
+        "value": s["value"],
+        "enabled": s.get("enabled", True),
+        "last_run": s.get("last_run"),
+    }
+
+
+@router.get("/schedules/{fancoil_id}")
+async def list_schedules(fancoil_id: str, user: dict = Depends(get_current_user)):
+    if not await can_access_fancoil(user, fancoil_id):
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    out = []
+    async for s in db.schedules.find({"fancoil_id": fancoil_id}).sort([("hour", 1), ("minute", 1)]):
+        out.append(_schedule_out(s))
+    return out
+
+
+@router.post("/schedules")
+async def create_schedule(req: ScheduleCreate, user: dict = Depends(get_current_user)):
+    if user["role"] == "viewer":
+        raise HTTPException(status_code=403, detail="Viewer não pode criar agendamentos")
+    if not await can_access_fancoil(user, req.fancoil_id):
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    fc = await db.fancoils.find_one({"_id": ObjectId(req.fancoil_id)})
+    if not fc:
+        raise HTTPException(status_code=404, detail="Fancoil não encontrado")
+    doc = req.dict()
+    doc["created_at"] = now_iso()
+    doc["created_by"] = user["id"]
+    doc["last_run"] = None
+    res = await db.schedules.insert_one(doc)
+    doc["_id"] = res.inserted_id
+    return _schedule_out(doc)
+
+
+@router.patch("/schedules/{schedule_id}")
+async def update_schedule(schedule_id: str, req: ScheduleUpdate, user: dict = Depends(get_current_user)):
+    if user["role"] == "viewer":
+        raise HTTPException(status_code=403, detail="Viewer não pode editar")
+    s = await db.schedules.find_one({"_id": ObjectId(schedule_id)})
+    if not s:
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+    if not await can_access_fancoil(user, s["fancoil_id"]):
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    upd = {k: v for k, v in req.dict().items() if v is not None}
+    if upd:
+        await db.schedules.update_one({"_id": ObjectId(schedule_id)}, {"$set": upd})
+    s = await db.schedules.find_one({"_id": ObjectId(schedule_id)})
+    return _schedule_out(s)
+
+
+@router.delete("/schedules/{schedule_id}")
+async def delete_schedule(schedule_id: str, user: dict = Depends(get_current_user)):
+    if user["role"] == "viewer":
+        raise HTTPException(status_code=403, detail="Viewer não pode remover")
+    s = await db.schedules.find_one({"_id": ObjectId(schedule_id)})
+    if not s:
+        raise HTTPException(status_code=404, detail="Não encontrado")
+    if not await can_access_fancoil(user, s["fancoil_id"]):
+        raise HTTPException(status_code=403, detail="Sem permissão")
+    await db.schedules.delete_one({"_id": ObjectId(schedule_id)})
+    return {"ok": True}
+
+
+# =============== HEATMAP ===============
+@router.get("/heatmap")
+async def heatmap(user: dict = Depends(get_current_user)):
+    """Snapshot of temperature per fancoil (filtered by permission)."""
+    allowed = await allowed_fancoil_ids(user)
+    cells = []
+    async for fc in db.fancoils.find({"active": True}):
+        fid = str(fc["_id"])
+        if allowed is not None and fid not in allowed:
+            continue
+        st = svc.get_state(fc["device_id"])
+        cells.append({
+            "id": fid,
+            "name": fc["name"],
+            "floor": fc["floor"],
+            "side": fc["side"],
+            "temperature": st.temperature,
+            "setpoint": st.setpoint,
+            "status": st.status,
+            "online": st.online,
+            "temp_error": st.temp_error,
+        })
+    return cells
 
 
 # =============== WEBSOCKET ===============

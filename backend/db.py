@@ -17,3 +17,8 @@ async def ensure_indexes():
     await db.history.create_index([("device_id", 1), ("timestamp", -1)])
     await db.access_log.create_index([("timestamp", -1)])
     await db.permissions.create_index("user_id", unique=True)
+    await db.password_reset_tokens.create_index("expires_at", expireAfterSeconds=0)
+    await db.password_reset_tokens.create_index("token_hash", unique=True)
+    await db.password_reset_requests.create_index("email")
+    await db.password_reset_requests.create_index("created_at", expireAfterSeconds=900)
+    await db.schedules.create_index("fancoil_id")
