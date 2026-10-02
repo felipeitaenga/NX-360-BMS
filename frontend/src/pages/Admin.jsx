@@ -580,7 +580,7 @@ export default function Admin() {
   return (
     <div className="p-6 lg:p-8 space-y-6" data-testid="admin-page">
       <h1 className="font-display text-3xl lg:text-4xl font-black tracking-tight uppercase flex items-center gap-3">
-        <SettingsIcon className="w-8 h-8 text-sky-400" /> Administração
+        <SettingsIcon className="w-8 h-8 text-sky-400" /> Configurações
       </h1>
       <Tabs defaultValue="users">
         <TabsList>

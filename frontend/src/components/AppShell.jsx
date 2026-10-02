@@ -19,7 +19,7 @@ const ITEMS = [
   { id: "hydraulics", label: "Hidráulica", icon: Droplets, path: "/hidraulica", module: "hidraulica" },
   { id: "reports", label: "Relatórios", icon: FileText, path: "/relatorios", module: "relatorios" },
   { id: "alarms", label: "Alarmes", icon: Siren, path: "/alarmes", module: "alarmes" },
-  { id: "admin", label: "Administração", icon: Settings, path: "/admin", module: "admin", adminOnly: true },
+  { id: "admin", label: "Configurações", icon: Settings, path: "/admin", module: "admin", adminOnly: true },
 ];
 
 function moduleAllowed(user, perms, item) {

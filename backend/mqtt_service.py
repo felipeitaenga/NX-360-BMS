@@ -111,6 +111,11 @@ class MQTTService:
             self._sched_task = asyncio.create_task(run_scheduler(self))
 
     async def restart(self):
+        # Clear in-memory telemetry when switching modes (avoid stale sim data
+        # polluting real broker view, and vice-versa). Preserve setpoint hints
+        # loaded from fancoils collection by re-reading them in start().
+        self.states.clear()
+        self.pending_cmds.clear()
         await self.stop()
         await self.start()
 
