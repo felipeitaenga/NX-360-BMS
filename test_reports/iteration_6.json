@@ -1,0 +1,27 @@
+{
+  "summary": "Iteration 6 — Tested MQTT broker connection fixes end-to-end. Backend endpoint POST /api/admin/broker/test validated for 6 scenarios (good host:1883/tls=off, wrong 8883+TLS, wrong 8883 no-TLS, invalid DNS host with timeout bound, empty host, viewer forbidden). Also validated GET /api/admin/settings exposes broker_connected + broker_last_error, and verified real broker reconnection cycle: switching simulation_enabled=false with host=156.67.82.199:1883/TLS=off results in broker_connected=true within ~6s; switching to 8883/TLS=true produces broker_connected=false with Portuguese error message; simulation restored to true after each test. Frontend Admin → Broker tab verified: all data-testids present (test-broker-button, broker-status, broker-host, broker-port, broker-tls-toggle, broker-username, broker-password, broker-prefix, broker-client-id, simulation-mode-switch, save-settings-button). TLS toggle auto-adjusts port (1883↔8883) in both directions. Click on 'test-broker-button' with 156.67.82.199:1883 TLS off shows toast 'Conexão com broker OK'.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_broker.py",
+    "/app/test_reports/pytest/iter6_broker.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "mqtt_service._start_real: synchronous connect() is correct for immediate socket error capture; however, no explicit socket timeout is set on the client before connect — a hostile host that accepts TCP but never replies with CONNACK could hang the sync connect. Current paho default blocks on name resolution + TCP SYN. Consider using client.connect_async + loop_start with manual timeout in start_real if ever an issue (not reproduced here).",
+    "test_connection catches ConnectionRefusedError/OSError before loop_start, but when loop_start is in flight with wrong-TLS-port, CONNACK never arrives — returns 'Timeout aguardando resposta do broker' after 6s. Message is correct but could be more specific (e.g., 'possível incompatibilidade TLS'). Minor UX improvement.",
+    "The frontend toast for failed broker test showed in logs intermittently; Sonner default 4s might not be enough visibility for long error strings. Consider increasing duration for error toasts."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "felipejferreira@gmail.com / NovaSenha123 (admin)",
+  "seed_data_creation": "Created TEST viewer user 'test_viewer_broker@example.com' / ViewerTest123 for 403 test (idempotent create).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All iteration 6 broker-related features verified. Backend tests at /app/backend/tests/test_broker.py (9 tests, all pass in ~5s). Simulation left ON after teardown; no residual broker config change. Do NOT re-run full suite unless broker/mqtt files change.",
+  "rca of the issue": "User reported 'NÃO ESTÁ CONECTANDO COM O SERVIDOR BROKER' because UI defaulted to port 8883+TLS, while the real broker at 156.67.82.199 is on 1883 without TLS. Fix in iteration 6 changed BrokerConfig defaults to port=1883 tls=False, added synchronous connect to capture real socket errors, added last_error exposure, added test-connection endpoint. All validated as working. Reproduction confirmed in backend test test_real_broker_bad_port_shows_error (8883/TLS=true → 'Conexão recusada'/'Timeout' error reported in broker_last_error). Mitigation: user should toggle TLS off in Admin UI (which auto-sets port to 1883) and save; backend reconnects and reports broker_connected=true."
+}
