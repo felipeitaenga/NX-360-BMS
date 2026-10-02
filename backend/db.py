@@ -22,3 +22,4 @@ async def ensure_indexes():
     await db.password_reset_requests.create_index("email")
     await db.password_reset_requests.create_index("created_at", expireAfterSeconds=900)
     await db.schedules.create_index("fancoil_id")
+    await db.device_states.create_index("device_id", unique=True)

@@ -123,7 +123,7 @@ export default function FancoilDetail() {
         {/* Schematic */}
         <Card className="lg:col-span-3 p-4 lg:p-6 bg-card/80">
           <FancoilSchematicSVG
-            running={status === true}
+            running={status === true || (status == null && cmd === true && estado === false) || (vag != null && vag > 10)}
             temperature={temperature}
             setpoint={serverSp}
             vag={vag}

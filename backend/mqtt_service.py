@@ -99,6 +99,17 @@ class MQTTService:
         async for fc in db.fancoils.find({}):
             st = self.get_state(fc["device_id"])
             st.setpoint = fc.get("setpoint_min", 22.0)
+        # Restore last-known telemetry from persisted store so values survive restart
+        if not self.simulation:
+            async for doc in db.device_states.find({}):
+                did = doc.get("device_id")
+                if not did:
+                    continue
+                st = self.get_state(did)
+                for key in ("online", "status", "modo", "estado", "cmd",
+                            "temperature", "temp_error", "setpoint", "vag", "pressure", "last_update"):
+                    if key in doc and doc[key] is not None:
+                        setattr(st, key, doc[key])
         if self.simulation:
             await self._start_simulation()
         else:
@@ -369,6 +380,16 @@ class MQTTService:
         # Push via WS
         if changed:
             await manager.broadcast("telemetry", {"device_id": device_id, "state": st.to_dict()})
+            # Persist latest state so it survives backend restarts (firmwares that
+            # don't publish retained messages for all topics would otherwise lose data)
+            try:
+                await db.device_states.update_one(
+                    {"device_id": device_id},
+                    {"$set": {**st.to_dict(), "updated_at": now_iso()}},
+                    upsert=True,
+                )
+            except Exception:
+                logger.exception("failed to persist device state")
 
         # Persist history sample every ~60s (keyed by rounded minute)
         if var in ("TEMPERATURA", "SETPOINT/SET", "VAG", "STATUS") and st.online:
