@@ -59,6 +59,10 @@ export default function FancoilDetail() {
   const setpoint = spBuffer != null ? spBuffer : (st.setpoint ?? fancoil?.setpoint);
   const serverSp = st.setpoint ?? fancoil?.setpoint;
   const vag = st.vag ?? fancoil?.vag;
+  const serverPressure = st.pressure ?? fancoil?.pressure;
+  const [pressureBuffer, setPressureBuffer] = useState(null);
+  const [sendingPressure, setSendingPressure] = useState(false);
+  const pressure = pressureBuffer != null ? pressureBuffer : serverPressure;
 
   const canCommand = user && user.role !== "viewer";
 
@@ -130,15 +134,19 @@ export default function FancoilDetail() {
         {/* Indicators + Controls */}
         <Card className="lg:col-span-2 p-5 bg-card/80 space-y-1">
           <h2 className="font-display text-sm uppercase tracking-widest text-muted-foreground mb-3">Indicadores</h2>
-          <IndicatorRow label="Condição" value={fancoil.in_alarm ? "ALARME" : "NORMAL"} color={fancoil.in_alarm ? "text-red-400" : "text-emerald-400"} />
-          <IndicatorRow label="Quadro" value={modo === true ? "AUTO" : modo === false ? "MANUAL" : "--"} color={modo === false ? "text-amber-400" : "text-emerald-400"} testid="indicator-quadro" />
-          <IndicatorRow label="Operação" value={estado === true ? "AUTOMÁTICO" : estado === false ? "FORÇADO" : "--"} color={estado === false ? "text-amber-400" : "text-emerald-400"} testid="indicator-operacao" />
-          <IndicatorRow label="Comando" value={cmd === true ? "LIGAR" : cmd === false ? "DESLIGAR" : "--"} color={cmd === true ? "text-emerald-400" : "text-slate-400"} testid="indicator-comando" />
-          <IndicatorRow label="Status" value={status === true ? "LIGADO" : status === false ? "DESLIGADO" : "--"} color={status === true ? "text-emerald-400" : "text-slate-400"} testid="indicator-status" />
+          <IndicatorRow
+            label="Condição"
+            value={estado === true ? "NORMAL" : estado === false ? "FORÇADO" : "--"}
+            color={estado === true ? "text-emerald-400" : estado === false ? "text-amber-400" : "text-muted-foreground"}
+            testid="indicator-condicao"
+          />
+          <IndicatorRow label="Comando" value={cmd === true ? "LIGAR" : cmd === false ? "DESLIGAR" : "--"} color={cmd === true ? "text-emerald-400" : "text-red-400"} testid="indicator-comando" />
+          <IndicatorRow label="Quadro" value={modo === true ? "AUTOMÁTICO" : modo === false ? "MANUAL" : "--"} color={modo === false ? "text-amber-400" : "text-emerald-400"} testid="indicator-quadro" />
+          <IndicatorRow label="Status" value={status === true ? "LIGADO" : status === false ? "DESLIGADO" : "--"} color={status === true ? "text-emerald-400" : "text-red-400"} testid="indicator-status" />
           <IndicatorRow label="Temperatura" value={tempError ? "ERRO" : temperature != null ? `${temperature.toFixed(1)} °C` : "--"} color={tempError ? "text-red-400" : "text-sky-400"} testid="indicator-temperatura" />
           <IndicatorRow label="Setpoint" value={serverSp != null ? `${serverSp.toFixed(1)} °C` : "--"} color="text-emerald-400" testid="indicator-setpoint" />
-          <IndicatorRow label="Válvula" value={vag != null ? `${vag.toFixed(0)} %` : "--"} color="text-sky-400" testid="indicator-valvula" />
-          <IndicatorRow label="Comunicação" value={online ? "ONLINE" : "OFFLINE"} color={online ? "text-emerald-400" : "text-slate-500"} />
+          <IndicatorRow label="Pressão" value={serverPressure != null ? `${serverPressure.toFixed(1)} %` : "--"} color="text-sky-400" testid="indicator-pressao" />
+          <IndicatorRow label="Comunicação" value={online ? "ONLINE" : "OFFLINE"} color={online ? "text-emerald-400" : "text-slate-500"} testid="indicator-comunicacao" />
           {st.last_update && (
             <div className="text-[10px] text-muted-foreground font-mono mt-2">
               Última atualização: {new Date(st.last_update).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
@@ -147,84 +155,146 @@ export default function FancoilDetail() {
 
           {/* Controls */}
           {canCommand && (
-            <div className="pt-4 mt-4 border-t border-border space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Operação</div>
-                  <div className="text-sm font-bold">{estado === true ? "AUTOMÁTICO" : "FORÇADO"}</div>
-                </div>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="outline" size="sm" disabled={!online || sendingEstado} data-testid="toggle-estado-button">
-                      {estado === true ? "→ Forçado" : "→ Automático"}
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Confirmar alteração de operação</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Alterar para <b>{estado === true ? "FORÇADO" : "AUTOMÁTICO"}</b>?
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                      <AlertDialogAction
-                        data-testid="confirm-estado"
-                        onClick={async () => { setSendingEstado(true); await sendCommand("ESTADO", String(!estado)); setSendingEstado(false); }}
+            <div className="pt-5 mt-5 border-t border-border space-y-5">
+              {/* Condição (ESTADO) — toggle NORMAL ↔ FORÇADO */}
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Condição de operação</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        disabled={!online || estado === true || sendingEstado}
+                        data-testid="btn-condicao-normal"
+                        className={`h-14 font-display font-black uppercase tracking-wide ${estado === true
+                          ? "bg-emerald-600 hover:bg-emerald-600 text-white ring-2 ring-emerald-300"
+                          : "bg-muted hover:bg-emerald-600/80 hover:text-white border border-border"}`}
                       >
-                        Confirmar
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                        NORMAL
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Mudar para NORMAL</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          O fancoil passará a obedecer a <b>programação horária da controladora</b>.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction data-testid="confirm-condicao-normal"
+                          onClick={async () => { setSendingEstado(true); await sendCommand("ESTADO", "true"); setSendingEstado(false); }}>
+                          Confirmar
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        disabled={!online || estado === false || sendingEstado}
+                        data-testid="btn-condicao-forcado"
+                        className={`h-14 font-display font-black uppercase tracking-wide ${estado === false
+                          ? "bg-amber-600 hover:bg-amber-600 text-white ring-2 ring-amber-300"
+                          : "bg-muted hover:bg-amber-600/80 hover:text-white border border-border"}`}
+                      >
+                        FORÇADO
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Mudar para FORÇADO</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          O fancoil passará a obedecer apenas <b>comandos do supervisório</b> (LIGAR/DESLIGAR abaixo).
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction data-testid="confirm-condicao-forcado"
+                          onClick={async () => { setSendingEstado(true); await sendCommand("ESTADO", "false"); setSendingEstado(false); }}>
+                          Confirmar
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      disabled={!online || estado !== false || sendingCmd}
-                      data-testid="fancoil-power-toggle"
-                      className={cmd === true ? "w-full bg-red-600 hover:bg-red-500" : "w-full bg-emerald-600 hover:bg-emerald-500"}
-                    >
-                      <Power className="w-4 h-4 mr-2" />
-                      {cmd === true ? "DESLIGAR" : "LIGAR"}
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Confirmar comando</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Deseja {cmd === true ? "DESLIGAR" : "LIGAR"} o fancoil <b>{fancoil.name}</b>?
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                      <AlertDialogAction
-                        data-testid="confirm-cmd"
-                        onClick={async () => { setSendingCmd(true); await sendCommand("CMD", String(!cmd)); setSendingCmd(false); }}
+              {/* Comando LIGAR / DESLIGAR */}
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Comando</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        disabled={!online || estado !== false || cmd === true || sendingCmd}
+                        data-testid="btn-cmd-ligar"
+                        className={`h-16 font-display text-base font-black uppercase tracking-wide ${cmd === true
+                          ? "bg-emerald-600 text-white ring-2 ring-emerald-300"
+                          : "bg-emerald-700 hover:bg-emerald-600 text-white"}`}
                       >
-                        Confirmar
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                        <Power className="w-5 h-5 mr-2" /> LIGAR
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>LIGAR fancoil {fancoil.name}?</AlertDialogTitle>
+                        <AlertDialogDescription>Envia CMD=true via tópico {fancoil.name} CMD/SET.</AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction data-testid="confirm-cmd-ligar"
+                          onClick={async () => { setSendingCmd(true); await sendCommand("CMD", "true"); setSendingCmd(false); }}>
+                          Confirmar LIGAR
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        disabled={!online || estado !== false || cmd === false || sendingCmd}
+                        data-testid="btn-cmd-desligar"
+                        className={`h-16 font-display text-base font-black uppercase tracking-wide ${cmd === false
+                          ? "bg-red-600 text-white ring-2 ring-red-300"
+                          : "bg-red-700 hover:bg-red-600 text-white"}`}
+                      >
+                        <Power className="w-5 h-5 mr-2" /> DESLIGAR
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>DESLIGAR fancoil {fancoil.name}?</AlertDialogTitle>
+                        <AlertDialogDescription>Envia CMD=false via tópico {fancoil.name} CMD/SET.</AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction data-testid="confirm-cmd-desligar"
+                          onClick={async () => { setSendingCmd(true); await sendCommand("CMD", "false"); setSendingCmd(false); }}>
+                          Confirmar DESLIGAR
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
                 {estado === true && (
-                  <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/40 p-2 rounded">
-                    Fancoil em modo automático (horário programado) — altere para FORÇADO para comandar manualmente.
+                  <div className="mt-2 text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-1.5 rounded">
+                    Em NORMAL o fancoil segue a programação horária — mude para FORÇADO para comandar manualmente.
                   </div>
                 )}
               </div>
 
-              <div className="space-y-2">
-                <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Setpoint</div>
+              {/* Setpoint */}
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Setpoint (envio ao fancoil)</div>
                 <div className="flex items-center gap-2">
                   <Button variant="outline" size="icon" data-testid="setpoint-decrement-button"
                           disabled={!online || sendingSp}
                           onClick={() => setSpBuffer((v) => (v != null ? v : serverSp ?? 23) - 0.5)}>
                     <Minus className="w-4 h-4" />
                   </Button>
-                  <div className="flex-1 text-center font-display text-2xl font-black">
+                  <div className="flex-1 text-center font-display text-3xl font-black">
                     {setpoint != null ? setpoint.toFixed(1) : "--"} °C
                   </div>
                   <Button variant="outline" size="icon" data-testid="setpoint-increment-button"
@@ -234,7 +304,7 @@ export default function FancoilDetail() {
                   </Button>
                 </div>
                 <Button
-                  className="w-full"
+                  className="w-full mt-2 h-11 font-semibold uppercase tracking-wide"
                   data-testid="setpoint-apply-button"
                   disabled={!online || sendingSp || spBuffer == null || spBuffer === serverSp}
                   onClick={async () => {
@@ -246,9 +316,42 @@ export default function FancoilDetail() {
                 >
                   Aplicar setpoint
                 </Button>
-                <div className="text-[10px] text-muted-foreground font-mono">
+                <div className="text-[10px] text-muted-foreground font-mono mt-1">
                   Limites: {fancoil.setpoint_min} – {fancoil.setpoint_max} °C
                 </div>
+              </div>
+
+              {/* Pressão */}
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Pressão (envio ao fancoil, 0–100 %)</div>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="icon" data-testid="pressure-decrement-button"
+                          disabled={!online || sendingPressure}
+                          onClick={() => setPressureBuffer((v) => Math.max(0, (v != null ? v : serverPressure ?? 50) - 5))}>
+                    <Minus className="w-4 h-4" />
+                  </Button>
+                  <div className="flex-1 text-center font-display text-3xl font-black">
+                    {pressure != null ? pressure.toFixed(1) : "--"} %
+                  </div>
+                  <Button variant="outline" size="icon" data-testid="pressure-increment-button"
+                          disabled={!online || sendingPressure}
+                          onClick={() => setPressureBuffer((v) => Math.min(100, (v != null ? v : serverPressure ?? 50) + 5))}>
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+                <Button
+                  className="w-full mt-2 h-11 font-semibold uppercase tracking-wide"
+                  data-testid="pressure-apply-button"
+                  disabled={!online || sendingPressure || pressureBuffer == null || pressureBuffer === serverPressure}
+                  onClick={async () => {
+                    setSendingPressure(true);
+                    await sendCommand("PRESSAO", pressureBuffer.toFixed(1));
+                    setPressureBuffer(null);
+                    setSendingPressure(false);
+                  }}
+                >
+                  Aplicar pressão
+                </Button>
               </div>
             </div>
           )}

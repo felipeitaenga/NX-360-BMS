@@ -114,7 +114,7 @@ class PermissionsUpdate(BaseModel):
 
 # -------- Commands --------
 class CommandReq(BaseModel):
-    kind: Literal["ESTADO", "CMD", "SETPOINT"]
+    kind: Literal["ESTADO", "CMD", "SETPOINT", "PRESSAO"]
     value: str  # "true"/"false" or numeric string
 
 

@@ -331,7 +331,7 @@ async def send_command(fancoil_id: str, req: CommandReq, user: dict = Depends(ge
     if not st.online:
         raise HTTPException(status_code=400, detail="Fancoil offline")
     # Validate CMD only in FORÇADO
-    var_map = {"ESTADO": "ESTADO/SET", "CMD": "CMD/SET", "SETPOINT": "SETPOINT/SET"}
+    var_map = {"ESTADO": "ESTADO/SET", "CMD": "CMD/SET", "SETPOINT": "SETPOINT/SET", "PRESSAO": "PRESSAO/SET"}
     var = var_map[req.kind]
     value = req.value
     if req.kind == "CMD" and st.estado is True:
@@ -346,6 +346,14 @@ async def send_command(fancoil_id: str, req: CommandReq, user: dict = Depends(ge
                 status_code=400,
                 detail=f"Setpoint fora dos limites do cadastro ({fc.get('setpoint_min')}-{fc.get('setpoint_max')} °C)",
             )
+        value = f"{v:.1f}"
+    if req.kind == "PRESSAO":
+        try:
+            v = float(value)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Pressão inválida")
+        if v < 0.0 or v > 100.0:
+            raise HTTPException(status_code=400, detail="Pressão deve estar entre 0 e 100 %")
         value = f"{v:.1f}"
     if req.kind in ("ESTADO", "CMD"):
         if value.lower() not in ("true", "false"):

@@ -21,7 +21,7 @@ from ws_manager import manager
 logger = logging.getLogger("mqtt")
 
 READ_TOPICS = ("ONLINE", "STATUS", "MODO", "TEMPERATURA", "VAG")
-WRITE_TOPICS = ("ESTADO/SET", "CMD/SET", "SETPOINT/SET")
+WRITE_TOPICS = ("ESTADO/SET", "CMD/SET", "SETPOINT/SET", "PRESSAO/SET")
 
 
 def now_iso() -> str:
@@ -42,6 +42,7 @@ class FancoilState:
         self.temp_error: bool = False
         self.setpoint: Optional[float] = None
         self.vag: Optional[float] = None
+        self.pressure: Optional[float] = None  # % — supervisório envia via PRESSAO/SET
         self.last_update: Optional[str] = None
         self.last_change_ts: float = time.time()
 
@@ -57,6 +58,7 @@ class FancoilState:
             "temp_error": self.temp_error,
             "setpoint": self.setpoint,
             "vag": self.vag,
+            "pressure": self.pressure,
             "last_update": self.last_update,
         }
 
@@ -330,6 +332,13 @@ class MQTTService:
                     st.setpoint = v
             except ValueError:
                 pass
+        elif var == "PRESSAO/SET":
+            try:
+                v = float(payload)
+                if 0.0 <= v <= 100.0:
+                    st.pressure = v
+            except ValueError:
+                pass
         else:
             changed = False
 
@@ -388,6 +397,7 @@ class MQTTService:
             "ESTADO/SET": st.estado,
             "CMD/SET": st.cmd,
             "SETPOINT/SET": st.setpoint,
+            "PRESSAO/SET": st.pressure,
         }.get(var)
         log = {
             "device_id": device_id,
@@ -501,6 +511,13 @@ class MQTTService:
                 v = float(value)
                 if 10.0 <= v <= 35.0:
                     st.setpoint = v
+            except ValueError:
+                pass
+        elif var == "PRESSAO/SET":
+            try:
+                v = float(value)
+                if 0.0 <= v <= 100.0:
+                    st.pressure = v
             except ValueError:
                 pass
         # Immediate echo
