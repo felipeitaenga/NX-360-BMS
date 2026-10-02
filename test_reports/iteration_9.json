@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 9 — PRESSAO command + fancoil detail redesign. 12/12 backend tests PASS; frontend validation of indicators/buttons/SVG/pressure flow all PASS.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_results": {
+    "backend": {
+      "pressao_success": "PASS — POST kind=PRESSAO value=50 → 200; topic ends with /9FE4/PRESSAO/SET; value='50.0'. Boundaries 0 and 100 accepted.",
+      "pressao_validation": "PASS — value=120 → 400 ('Pressão deve estar entre 0 e 100 %'); value=-5 → 400; value='abc' → 400 ('Pressão inválida').",
+      "pressao_permissions": "PASS — viewer → 403; operator with empty fancoil_ids → 403.",
+      "pressao_no_estado_check": "PASS — PRESSAO accepted in NORMAL mode (estado=true) — no FORÇADO check applied.",
+      "cmd_still_blocked_in_normal": "PASS — kind=CMD with estado=true → 400 ('Fancoil em modo AUTOMÁTICO...')."
+    },
+    "frontend": {
+      "indicators_panel": "PASS — All 8 indicators present (condicao, comando, quadro, status, temperatura, setpoint, pressao, comunicacao). indicator-operacao and indicator-valvula absent as required.",
+      "condicao_buttons": "PASS — btn-condicao-normal (disabled when estado=true/active green) and btn-condicao-forcado (enabled, allows switch). AlertDialog opens on click.",
+      "cmd_buttons": "PASS — btn-cmd-ligar and btn-cmd-desligar both DISABLED when estado=true (NORMAL), with amber warning message visible: 'Em NORMAL o fancoil segue a programação horária — mude para FORÇADO para comandar manualmente.'",
+      "pressure_control": "PASS — pressure-apply initially disabled; after 2x pressure-increment (step 5), apply enabled; clicking Aplicar sent POST kind=PRESSAO and indicator-pressao updated 50.0% → 60.0%. Toast 'Comando PRESSAO enviado' displayed.",
+      "svg_schematic": "PASS — data-testid='fancoil-schematic' present; VAG label rendered inside SVG. Fan 'spin' animation style attached but inactive here because status=null (fancoil OFF). Code applies 'animation: spin 0.25s linear infinite' when running=true (status===true)."
+    }
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter9_pressao.py",
+    "/app/test_reports/pytest/iter9_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "mqtt_service.py publish_command uses retain=True for all WRITE_TOPICS including PRESSAO/SET — correct per spec, but keep in mind retained PRESSAO values will persist on broker across reboots.",
+    "FancoilDetail.jsx: SVG receives setpoint=serverSp (live). When serverSp is null the badge shows just 'SP --' — minor cosmetic (not an issue in current test).",
+    "In NORMAL mode, STATUS and MODO came back as '--' from the real ESP32 (no echo yet). This is expected for the real broker setup and not a bug in iter9.",
+    "No regression on CMD validation; PRESSAO path properly bypasses estado check."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter9_pressao.py"],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100% (all checks)"},
+  "test_credentials": "Admin felipejferreira@gmail.com / NovaSenha123",
+  "seed_data_creation": "Created test_iter9_viewer@example.com (viewer) and test_iter9_operator@example.com (operator with empty permissions) for RBAC tests. Pressure restored to 50% at end of suite.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 9 passed cleanly. Backend PRESSAO path works end-to-end on real broker (156.67.82.199:1883) for CJ101 device_id=9FE4. The frontend FancoilDetail panel now shows 8 indicators (no OPERAÇÃO/VÁLVULA), large Condição/Comando buttons, and new Pressão +/- Aplicar controls (step 5, 0..100 clamp). SVG retains VAG inside the schematic. CJ101 is currently in NORMAL (estado=true) so CMD buttons are intentionally disabled with amber warning."
+}
