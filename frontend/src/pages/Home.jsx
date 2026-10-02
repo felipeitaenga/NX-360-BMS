@@ -82,7 +82,7 @@ export default function Home() {
         <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
           <div>
             <div className="text-xs text-sky-300 font-mono uppercase tracking-widest">Edifício Monitorado</div>
-            <div className="font-display text-xl lg:text-2xl font-bold text-white">Supervisório HVAC em Tempo Real</div>
+            <div className="font-display text-xl lg:text-2xl font-bold text-white">NX-360 BMS — Automação Predial em Tempo Real</div>
           </div>
         </div>
       </div>

@@ -1,0 +1,29 @@
+{
+  "summary": "Iteration 11 — double fix validated: (1) MQTT alias normalization in mqtt_service._apply_update and (2) SVG <animateTransform> native animation in FancoilSchematicSVG. Backend: 4/4 pytest tests pass against real broker 156.67.82.199:1883. Published synthetic topics TJS/TESTDEV1/{COMANDO=1, MODO=0, ESTADO=true, CT=22.5, SETPOINT=24, PRESSAO=55, STATUS=1} and the registered CJ-TEST fancoil correctly reports cmd=True, modo=False, estado=True, temperature=22.5, setpoint=24.0, pressure=55.0, status=True. Malformed publishes (ESTADO='talvez', CT/SETPOINT/PRESSAO = non-numeric) do not crash the backend. For the 15 real CJs, 12/15 now expose at least one of estado/cmd/modo (CJ041: cmd=False/estado=True/modo=True; CJ062: cmd=False/estado=False/modo=True; CJ101: cmd=True/estado=True/temp=18.7°C/sp=18.5°C/pressure=60.0% — all were None before the fix). Frontend: verified both branches of the running flag via DOM inspection — CJ031 (status=None) renders fancoil-schematic without any <animateTransform>; CJ101 (status=True) renders <animateTransform type=\"rotate\" dur=\"0.6s\"> inside the <g key=\"spin-on\"> group. The remount-on-status-change pattern works correctly. All indicators (CONDIÇÃO/COMANDO/QUADRO/STATUS/TEMP/SP/PRESSÃO/COMUNICAÇÃO) show real values on CJ101 and '--' on CJ031 as expected.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Painel Geral (/)", "issues": ["Hero still reads 'Supervisório HVAC em Tempo Real' — minor leftover from NX-360 rebrand (iter10 also flagged similar strings)"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter11_aliases_and_svg.py",
+    "/app/test_reports/pytest/iter11.xml"
+  ],
+  "action_items": [
+    "No functional fixes required. Optional: update home-page hero copy to match NX-360 BMS branding."
+  ],
+  "critical_code_review_comments": [
+    "mqtt_service._apply_update now accepts every known ESP32 variant — good. Consider adding a unit test at the module level (not just e2e via broker) so the alias table is pinned by tests.",
+    "FancoilSchematicSVG uses key={running ? 'spin-on' : 'spin-off'} to force remount — correct SMIL animation reset pattern. Native <animateTransform> works across all browsers."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter11_aliases_and_svg.py (new)"],
+  "success_rate": {"backend": "100% (4/4)", "frontend": "100% (both running=true and running=false branches validated)"},
+  "test_credentials": "felipejferreira@gmail.com / @Pilares1 (works)",
+  "seed_data_creation": "Test created and then deleted a CJ-TEST fancoil mapped to device_id=TESTDEV1. TESTDEV1/TESTDEV2 entries are left in db.devices (detected-devices list) — harmless, cleared on backend restart.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Both iter11 fixes are confirmed working on the live preview env. Broker 156.67.82.199:1883 is reachable. Admin password is '@Pilares1'. CJ101 (device_id=9FE4) is the most-populated real device for frontend validation; CJ031 (device_id=A100) is a reliable OFFLINE-looking device for the 'running=false' branch. Use paho-mqtt with client_id='iter11-tester' to publish synthetic telemetry if needed. test_iter11_aliases_and_svg.py has a Pydantic quirk — Fancoil 'side' field is Literal[1,2], not a string."
+}
