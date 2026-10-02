@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 12 — persistence of db.device_states + SVG CSS-based fan animation validated. Backend: 5/5 pytest tests pass. (1) db.device_states has unique index on device_id; (2) every MQTT publish upserts the state doc (temperature=25, status=True, vag=42.5 confirmed); (3) persistence survives `sudo supervisorctl restart backend` — TESTPERSIST1 doc with temperature=27.3 still in Mongo after restart; (4) 13/15 real CJs expose 4+ state fields (goal was >=10, previously 1-2); (5) MQTT aliases COMANDO/MODO/CT/SETPOINT/PRESSAO continue to resolve correctly. Frontend: CJ101 (status=LIGADO, cmd=LIGAR, estado=NORMAL, temp=18.4°C) renders exactly 1 `.fan-rotate` group and ZERO <animateTransform> elements. CJ031 (offline, status=--) renders 0 `.fan-rotate` and 0 <animateTransform>. CSS @keyframes `fan-rotate` is present and resolves to `0deg → 360deg`. CJ171 (cmd=DESLIGAR, status=--) however renders `.fan-rotate`=1 because VAG=100% triggers the fallback `vag != null && vag > 10` — see action items.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Fancoil running fallback on FancoilDetail.jsx",
+        "issue": "The `running` flag uses `vag != null && vag > 10` as a third fallback. VAG is the chilled-water valve opening (Válvula d'água Gelada), NOT the fan speed. On CJ171 the device publishes VAG=100% while cmd=DESLIGAR and status is null — the UI consequently animates the fan even though the firmware reports the fan is off. The request explicitly stated 'CJ171 (cmd=False) não anima' but today it DOES animate. Consider tightening the fallback to `(vag > 10 && cmd !== false)` or use a different proxy signal.",
+        "affected_selectors": [".fan-rotate", "[data-testid=\"fancoil-schematic\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter12_persist_and_svg.py",
+    "/app/test_reports/pytest/iter12.xml"
+  ],
+  "action_items": [
+    "Refine running-flag fallback in FancoilDetail.jsx line 126: VAG>10 alone over-triggers the fan animation on devices with the chilled-water valve open but cmd=false (e.g. CJ171). Suggested: running = (status === true) || (status == null && cmd === true && estado === false) || (vag != null && vag > 10 && cmd !== false)"
+  ],
+  "critical_code_review_comments": [
+    "mqtt_service._apply_update persists device_states on every change — good. However the write happens inside the hot path for every single telemetry message (potentially many per second across 15+ devices). Consider debouncing or batching writes if the broker becomes chatty; currently every TEMPERATURA tick triggers an upsert.",
+    "FancoilSchematicSVG uses `transform-origin: 0 0` on `.fan-rotate` class — this works because the <g> is already positioned by its parent transform=translate(540,165) and the blades are drawn relative to local origin 0,0. CSS-based animation is correctly reset-free across React re-renders.",
+    "startup state reload is gated by `simulation=false` which is correct; but if settings.simulation_enabled is toggled at runtime via restart(), svc.states.clear() is called BEFORE start() — on the next real-mode start it will reload from Mongo. Good.",
+    "db.device_states has no TTL — stale device state docs for retired device_ids may accumulate indefinitely. Minor cleanup concern.",
+    "test_iter11 left-over documents TESTDEV1/TESTDEV2 may still be in db.devices (noted in iter11). Iter12 teardown correctly cleans TESTPERSIST*."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter12_persist_and_svg.py (new)"],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "95% (fan-rotate class and keyframe verified on CJ101 running + CJ031 offline; CJ171 fallback edge case flagged)"},
+  "test_credentials": "felipejferreira@gmail.com / @Pilares1 (works)",
+  "seed_data_creation": "Test created TESTPERSIST1 and TESTPERSIST2 docs in db.device_states + db.devices; teardown deletes everything matching /^TESTPERSIST/. No fancoil CJ-PERSIST was created (not required by the tests).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iter12 confirms: (a) db.device_states unique index on device_id; (b) MQTT→Mongo upsert on every telemetry message; (c) restart-survival of state; (d) 13/15 real CJs populated with 4+ fields (goal >=10 exceeded); (e) CSS-based .fan-rotate animation (zero <animateTransform> remaining). One edge case: VAG>10 as running fallback mis-fires on CJ171 (VAG=100%, cmd=false) — animation shows but device is actually off. Flagged for E1 to decide.",
+  "rca of the issue": "Original bug 1 (fan animation stuttering): SMIL <animateTransform> was being restarted on every React re-render because the <g> element remounted on each state refresh. Fix replaced SMIL with CSS @keyframes `fan-rotate` applied via conditional className — the animation now continues smoothly across re-renders because CSS animations don't reset when the className stays the same. Original bug 2 (only CJ101 syncing): backend FancoilState lived in-memory only; non-retained MQTT topics (STATUS/MODO/SETPOINT/PRESSAO) published once at firmware boot were lost when the backend reconnected to the broker. Fix persists every state change to db.device_states and reloads on start() when simulation=false, so firmware values survive backend restarts. Verified by publishing TEMPERATURA=27.3 then restarting backend — the doc remained with temperature=27.3."
+}
