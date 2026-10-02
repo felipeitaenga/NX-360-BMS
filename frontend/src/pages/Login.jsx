@@ -40,8 +40,8 @@ export default function Login() {
             <Wind className="w-6 h-6 text-sky-400" />
           </div>
           <div>
-            <h1 className="font-display text-xl font-black tracking-tight text-sky-400">PILARES HVAC</h1>
-            <div className="text-xs text-slate-400 font-mono uppercase tracking-widest">Supervisório de Fancoils</div>
+            <h1 className="font-display text-xl font-black tracking-tight text-sky-400">NX-360 BMS</h1>
+            <div className="text-xs text-slate-400 font-mono uppercase tracking-widest">Sistema de Automação Predial</div>
           </div>
         </div>
 

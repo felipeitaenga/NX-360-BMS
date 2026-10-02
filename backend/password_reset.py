@@ -16,7 +16,7 @@ logger = logging.getLogger("password_reset")
 
 EMAIL_BASE_URL = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip().rstrip("/") or "https://integrations.emergentagent.com"
 EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY", "")
-EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME") or "Pilares HVAC"
+EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME") or "NX-360 BMS"
 
 
 class ForgotReq(BaseModel):

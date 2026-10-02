@@ -19,7 +19,7 @@ from password_reset import router as pwd_router
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("app")
 
-app = FastAPI(title="Pilares HVAC Supervisório", version="1.0.0")
+app = FastAPI(title="NX-360 BMS — Sistema de Automação Predial", version="1.0.0")
 
 cors_origins = os.environ.get("CORS_ORIGINS", "*")
 origins = [o.strip() for o in cors_origins.split(",") if o.strip()]

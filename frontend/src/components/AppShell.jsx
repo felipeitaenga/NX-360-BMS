@@ -88,9 +88,9 @@ export default function AppShell({ children }) {
         style={{ background: "hsl(var(--sidebar-bg))", borderColor: "hsl(var(--sidebar-border))" }}
       >
         <div className="px-5 py-6 border-b" style={{ borderColor: "hsl(var(--sidebar-border))" }}>
-          <div className="font-display text-lg font-black tracking-tight text-sky-400">PILARES HVAC</div>
+          <div className="font-display text-lg font-black tracking-tight text-sky-400">NX-360 BMS</div>
           <div className="text-xs text-slate-400 font-mono uppercase tracking-widest mt-1">
-            Supervisório de Fancoils
+            Automação Predial
           </div>
         </div>
         <Nav />
@@ -138,7 +138,7 @@ export default function AppShell({ children }) {
           <button onClick={() => setOpen(true)} data-testid="menu-open" className="p-2 text-slate-200">
             <Menu className="w-6 h-6" />
           </button>
-          <span className="font-display font-black text-sky-400">PILARES HVAC</span>
+          <span className="font-display font-black text-sky-400">NX-360 BMS</span>
         </div>
         <div className="flex items-center gap-2">
           {activeAlarms.length > 0 && (
@@ -162,7 +162,7 @@ export default function AppShell({ children }) {
           <aside className="relative w-72 flex flex-col"
                  style={{ background: "hsl(var(--sidebar-bg))" }}>
             <div className="flex items-center justify-between px-5 py-5 border-b" style={{ borderColor: "hsl(var(--sidebar-border))" }}>
-              <span className="font-display font-black text-sky-400">PILARES HVAC</span>
+              <span className="font-display font-black text-sky-400">NX-360 BMS</span>
               <button onClick={() => setOpen(false)} data-testid="menu-close" className="text-slate-300">
                 <X className="w-6 h-6" />
               </button>
