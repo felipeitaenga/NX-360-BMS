@@ -69,6 +69,7 @@ class FancoilCreate(BaseModel):
 
 class FancoilUpdate(BaseModel):
     name: Optional[str] = None
+    device_id: Optional[str] = None
     floor: Optional[int] = None
     side: Optional[Literal[1, 2]] = None
     description: Optional[str] = None

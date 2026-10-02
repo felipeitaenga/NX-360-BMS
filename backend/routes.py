@@ -249,6 +249,30 @@ async def update_fancoil(fancoil_id: str, req: FancoilUpdate, _: dict = Depends(
     if not fc:
         raise HTTPException(status_code=404, detail="Fancoil não encontrado")
     upd = {k: v for k, v in req.dict().items() if v is not None}
+    # Device ID change: validate uniqueness and migrate dependent data
+    new_device_id = upd.get("device_id")
+    old_device_id = fc["device_id"]
+    if new_device_id and new_device_id != old_device_id:
+        new_device_id = new_device_id.strip()
+        upd["device_id"] = new_device_id
+        if not new_device_id:
+            raise HTTPException(status_code=400, detail="Device ID não pode ser vazio")
+        existing = await db.fancoils.find_one({"device_id": new_device_id, "_id": {"$ne": oid}})
+        if existing:
+            raise HTTPException(status_code=400, detail=f"Device ID '{new_device_id}' já cadastrado em outro fancoil")
+        # Migrate dependent collections to keep history/alarms/commands tied to the fancoil
+        await db.history.update_many({"device_id": old_device_id}, {"$set": {"device_id": new_device_id}})
+        await db.command_log.update_many({"device_id": old_device_id}, {"$set": {"device_id": new_device_id}})
+        await db.alarms.update_many({"device_id": old_device_id}, {"$set": {"device_id": new_device_id}})
+        await db.devices.delete_many({"device_id": {"$in": [old_device_id, new_device_id]}})
+        # Move in-memory telemetry state and clear pending commands tied to old id
+        old_state = svc.states.pop(old_device_id, None)
+        if old_state is not None:
+            old_state.device_id = new_device_id
+            svc.states[new_device_id] = old_state
+        svc.pending_cmds = {
+            k: v for k, v in svc.pending_cmds.items() if not k.startswith(f"{old_device_id}:")
+        }
     if upd:
         await db.fancoils.update_one({"_id": oid}, {"$set": upd})
     fc = await db.fancoils.find_one({"_id": oid})

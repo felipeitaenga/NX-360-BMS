@@ -326,6 +326,7 @@ function EditFancoilDialog({ fancoil, onClose, onSaved }) {
     if (fancoil) {
       setForm({
         name: fancoil.name,
+        device_id: fancoil.device_id,
         floor: fancoil.floor,
         side: fancoil.side,
         description: fancoil.description || "",
@@ -339,18 +340,28 @@ function EditFancoilDialog({ fancoil, onClose, onSaved }) {
   }, [fancoil]);
 
   const save = async () => {
+    const payload = {
+      name: form.name,
+      floor: parseInt(form.floor),
+      side: parseInt(form.side),
+      description: form.description,
+      setpoint_min: parseFloat(form.setpoint_min),
+      setpoint_max: parseFloat(form.setpoint_max),
+      temp_alarm_min: parseFloat(form.temp_alarm_min),
+      temp_alarm_max: parseFloat(form.temp_alarm_max),
+      active: form.active,
+    };
+    const newDid = (form.device_id || "").trim();
+    if (newDid && newDid !== fancoil.device_id) {
+      const ok = window.confirm(
+        `Alterar o Device ID de "${fancoil.device_id}" para "${newDid}"?\n\n` +
+        `O histórico, alarmes e logs de comando serão migrados automaticamente para o novo ID.`
+      );
+      if (!ok) return;
+      payload.device_id = newDid;
+    }
     try {
-      await api.patch(`/fancoils/${fancoil.id}`, {
-        name: form.name,
-        floor: parseInt(form.floor),
-        side: parseInt(form.side),
-        description: form.description,
-        setpoint_min: parseFloat(form.setpoint_min),
-        setpoint_max: parseFloat(form.setpoint_max),
-        temp_alarm_min: parseFloat(form.temp_alarm_min),
-        temp_alarm_max: parseFloat(form.temp_alarm_max),
-        active: form.active,
-      });
+      await api.patch(`/fancoils/${fancoil.id}`, payload);
       toast.success("Fancoil atualizado");
       onSaved();
       onClose();
@@ -368,15 +379,19 @@ function EditFancoilDialog({ fancoil, onClose, onSaved }) {
           <DialogTitle>Editar fancoil — {fancoil.name}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="text-xs font-mono uppercase bg-muted/40 border border-border rounded p-2">
-            Device ID: <b>{fancoil.device_id}</b> (não editável — se mudou o ESP32, remova e cadastre novamente)
-          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <Label className="text-[10px] uppercase">Nome</Label>
               <Input value={form.name || ""} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="edit-fancoil-name" />
             </div>
             <div>
+              <Label className="text-[10px] uppercase flex items-center gap-2">
+                Device ID (ESP32)
+                <span className="text-[9px] text-amber-400 font-normal normal-case">migra histórico automaticamente</span>
+              </Label>
+              <Input value={form.device_id || ""} onChange={(e) => setForm({ ...form, device_id: e.target.value })} data-testid="edit-fancoil-device-id" className="font-mono" />
+            </div>
+            <div className="md:col-span-2">
               <Label className="text-[10px] uppercase">Descrição</Label>
               <Input value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} data-testid="edit-fancoil-description" />
             </div>
