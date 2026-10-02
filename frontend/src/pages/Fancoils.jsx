@@ -95,7 +95,7 @@ export default function Fancoils() {
     const left = {}, right = {};
     const floors = new Set();
     let on = 0, off = 0, forced = 0, alarm = 0, offline = 0;
-    const filtered = fancoils.filter(
+    const filtered = fancoils.filter((fc) => fc.active !== false).filter(
       (fc) => !q || fc.name.toLowerCase().includes(q.toLowerCase()) || String(fc.floor).includes(q)
     );
     filtered.forEach((fc) => {

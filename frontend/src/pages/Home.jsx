@@ -42,7 +42,8 @@ export default function Home() {
 
   const stats = useMemo(() => {
     let on = 0, forced = 0, offline = 0, tempSum = 0, tempCount = 0;
-    fancoils.forEach((fc) => {
+    const active = fancoils.filter((fc) => fc.active !== false);
+    active.forEach((fc) => {
       const st = states[fc.device_id] || {};
       const status = st.status ?? fc.status;
       const estado = st.estado ?? fc.estado;
@@ -58,7 +59,7 @@ export default function Home() {
     });
     return {
       on, forced, offline,
-      total: fancoils.length,
+      total: active.length,
       avgTemp: tempCount ? (tempSum / tempCount).toFixed(1) : "--",
     };
   }, [fancoils, states]);

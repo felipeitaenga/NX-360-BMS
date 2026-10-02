@@ -1,0 +1,29 @@
+{
+  "summary": "Iteração 7 — Validação do fix 'CJ101 não batia com o supervisório antigo'. Backend: 5/5 pytest passaram (sim=OFF, broker 156.67.82.199:1883 conectado, 1 ativo (CJ101/9FE4) + 31 inativos SIM*, CJ101 recebendo dados reais em ~5s após restart, detected-devices com >=10 reais, troca sim ON→OFF limpa state corretamente sem vazamento). Frontend: sidebar e página /admin exibem 'Configurações' (nav-admin ok); página detalhe CJ101 mostra TEMPERATURA=20.6°C real, OPERAÇÃO AUTOMÁTICO, COMUNICAÇÃO ONLINE, device_id 9FE4, todos os 9 indicadores presentes; /mapa-calor mostra apenas CJ101 (backend filtra active=true); Configurações → Broker e Parâmetros exibe badge verde 'CONECTADO', porta 1883, TLS off, 'Modo simulação ativo' switch desligado. Estado final preservado conforme solicitado.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "FancoilsPage (/ar-condicionado)", "issue": "Lista mostra TODOS os 32 fancoils (incluindo os 31 inativos SIM*) para admin — contradiz a expectativa 'só mostra 1 card (CJ101)' na review. O backend retorna todos para admins (por design), mas a view não filtra por active=true nem por 'authorized'. Admin vê CJ101 + 31 cards vazios com '--'. Sugestão: ou filtrar por active no front, ou expor toggle 'ocultar inativos'.", "selector": "[data-testid^=\"fancoil-card-\"]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter7_broker_real.py", "/app/test_reports/pytest/iter7_results.xml"],
+  "action_items": [
+    "Decidir se a página /ar-condicionado deve esconder fancoils inativos (active=false) por padrão também para admins. Hoje mostra todos os 32 com cards vazios '--', o que pode confundir o usuário já que a review espera 'só CJ101'."
+  ],
+  "critical_code_review_comments": [
+    "mqtt_service.restart(): bom — states e pending_cmds limpos. Mas se o broker demorar a reconectar após restart(), os setpoints vindos do fancoils collection são repopulados em start() (OK).",
+    "GET /fancoils retorna fancoils inativos também para admins, o que é consistente para a tela de Configurações → Fancoils, porém no painel operacional /ar-condicionado isso polui a visão. Avaliar front-end filter por fc.active.",
+    "GET /heatmap já filtra por active=true — comportamento correto e coerente com a solução.",
+    "QUADRO (MODO) e STATUS do CJ101 ainda apareciam como '--' nos testes — aceitável porque dependem do ESP32 real republicar; retained messages podem não cobrir todos os tópicos."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter7_broker_real.py"],
+  "success_rate": {"backend": "100%", "frontend": "90%"},
+  "test_credentials": "admin: felipejferreira@gmail.com / NovaSenha123",
+  "seed_data_creation": "nenhum",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Simulation está OFF, broker 156.67.82.199:1883 TLS=off, 1 fancoil ativo (CJ101 device_id=9FE4), 31 inativos SIM*. Testes backend em /app/backend/tests/test_iter7_broker_real.py. Único ponto aberto: FancoilsPage mostra 32 cards para admin — produto/UX decidir se filtra inativos.",
+  "rca of the issue": "O supervisório antigo lia valores reais do broker 156.67.82.199, mas o backend estava rodando em modo simulação (simulation_enabled=true). O loop _simulation_loop a cada 2s sobrescrevia svc.states dos fancoils ativos (que incluíam SIM0101..SIM1702 e o CJ101 real 9FE4) com valores fictícios, mascarando a telemetria real que o paho-mqtt entregava via on_message. Fix aplicado: (1) simulation_enabled=false; (2) 31 fancoils SIM* marcados active=false para o loop de simulação não tocar neles mesmo se religado; (3) broker port 1883/TLS off; (4) restart() limpa svc.states/pending_cmds para evitar leak entre modos. Reprodução: PUT /admin/settings {simulation_enabled:true} → aguardar 10s → PUT {simulation_enabled:false} → observar que SIM1001 fica com online=False imediatamente (teste automatizado test_mode_switch_clears_state_and_no_sim_leak)."
+}
