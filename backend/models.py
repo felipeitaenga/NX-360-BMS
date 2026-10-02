@@ -118,6 +118,11 @@ class CommandReq(BaseModel):
     value: str  # "true"/"false" or numeric string
 
 
+class BulkCommandReq(BaseModel):
+    action: Literal["force_all", "unforce_all", "turn_on_all", "turn_off_all"]
+    fancoil_ids: List[str] = Field(default_factory=list)  # empty = todos autorizados
+
+
 # -------- Alarms --------
 class AlarmAck(BaseModel):
     alarm_id: str

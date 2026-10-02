@@ -13,10 +13,15 @@ import logging
 import os
 import random
 import time
+import uuid
+from collections import deque
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional
 from db import db
 from ws_manager import manager
+
+SNIFF_PER_DEVICE = 50
+SNIFF_GLOBAL = 300
 
 logger = logging.getLogger("mqtt")
 
@@ -74,6 +79,10 @@ class MQTTService:
         self._sim_task: Optional[asyncio.Task] = None
         self._alarm_task: Optional[asyncio.Task] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        # Live sniffer buffers (raw MQTT traffic for diagnostics)
+        self.sniff_per_device: Dict[str, deque] = {}
+        self.sniff_all: deque = deque(maxlen=SNIFF_GLOBAL)
+        self.sniff_unknown: deque = deque(maxlen=SNIFF_GLOBAL)
         # Simulation params
         self.sim_schedule_start = 7  # 07h
         self.sim_schedule_end = 21  # 21h
@@ -167,7 +176,12 @@ class MQTTService:
         host = str(cfg["host"]).strip()
         port = int(cfg.get("port", 1883))
         use_tls = bool(cfg.get("tls", False))
-        client = mqtt.Client(client_id=cfg.get("client_id", "pilares-backend"), protocol=mqtt.MQTTv311)
+        # Unique client_id per connect to avoid broker kicking us out when
+        # another client (supervisório/ESP32) uses the same id. The configured
+        # client_id is used only as a human-readable prefix.
+        base_id = (cfg.get("client_id") or "nx360-backend").strip() or "nx360-backend"
+        unique_id = f"{base_id}-{uuid.uuid4().hex[:8]}"
+        client = mqtt.Client(client_id=unique_id, clean_session=True, protocol=mqtt.MQTTv311)
         if cfg.get("username"):
             client.username_pw_set(cfg["username"], cfg.get("password", ""))
         if use_tls:
@@ -191,8 +205,12 @@ class MQTTService:
             if rc == 0:
                 self.connected = True
                 self.last_error = None
+                # Subscribe to the configured prefix AND to the full tree so we
+                # can see devices that publish without prefix / with wrong case
+                # (diagnostic). The handler filters on prefix for real updates.
                 c.subscribe(f"{self.topic_prefix}/+/#", qos=1)
-                logger.info(f"MQTT conectado em {host}:{port} (TLS={use_tls})")
+                c.subscribe("#", qos=0)
+                logger.info(f"MQTT conectado em {host}:{port} (TLS={use_tls}) id={unique_id}")
             else:
                 self.connected = False
                 msg = rc_messages.get(rc, f"código {rc}")
@@ -210,6 +228,7 @@ class MQTTService:
         def on_message(c, u, msg):
             try:
                 payload = msg.payload.decode(errors="ignore").strip()
+                self._record_sniff(msg.topic, payload)
                 asyncio.run_coroutine_threadsafe(
                     self._handle_message(msg.topic, payload), self._loop
                 )
@@ -291,12 +310,58 @@ class MQTTService:
             pass
         return result
 
+    def _record_sniff(self, topic: str, payload: str):
+        """Store raw MQTT message in diagnostic ring buffers (runs in MQTT thread)."""
+        ts = now_iso()
+        parts = topic.split("/")
+        entry = {"ts": ts, "topic": topic, "payload": payload[:120]}
+        self.sniff_all.append(entry)
+        # Match configured prefix (case-insensitive) and extract device id
+        if len(parts) >= 3 and parts[0].lower() == self.topic_prefix.lower():
+            device_id = parts[1]
+            buf = self.sniff_per_device.get(device_id)
+            if buf is None:
+                buf = deque(maxlen=SNIFF_PER_DEVICE)
+                self.sniff_per_device[device_id] = buf
+            buf.append({"ts": ts, "var": "/".join(parts[2:]), "payload": payload[:120]})
+        else:
+            self.sniff_unknown.append(entry)
+
+    def get_sniff(self, device_id: Optional[str] = None) -> list:
+        if device_id:
+            buf = self.sniff_per_device.get(device_id)
+            return list(buf) if buf else []
+        return list(self.sniff_all)
+
+    def get_sniff_unknown(self) -> list:
+        return list(self.sniff_unknown)
+
+    def sniff_summary(self) -> list:
+        """Return per-device list of distinct vars seen and last-seen timestamp."""
+        out = []
+        for did, buf in self.sniff_per_device.items():
+            vars_map: Dict[str, dict] = {}
+            for e in buf:
+                v = e["var"]
+                prev = vars_map.get(v)
+                if not prev or e["ts"] > prev["ts"]:
+                    vars_map[v] = {"ts": e["ts"], "last_payload": e["payload"]}
+            out.append({
+                "device_id": did,
+                "vars": [{"var": v, **info} for v, info in sorted(vars_map.items())],
+                "last_seen": max((e["ts"] for e in buf), default=None),
+                "msg_count": len(buf),
+            })
+        out.sort(key=lambda x: x["device_id"])
+        return out
+
     async def _handle_message(self, topic: str, payload: str):
         parts = topic.split("/")
         if len(parts) < 3:
             return
         prefix = parts[0]
-        if prefix != self.topic_prefix:
+        # Accept configured prefix case-insensitively (some firmwares publish "tjs" lowercase)
+        if prefix.lower() != self.topic_prefix.lower():
             return
         device_id = parts[1]
         var = "/".join(parts[2:])

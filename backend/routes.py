@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from db import db
 from models import (
     LoginReq, ChangePasswordReq, ResetPasswordAdminReq, UserCreate, UserUpdate, UserOut,
-    FancoilCreate, FancoilUpdate, FancoilOut, PermissionsUpdate, CommandReq,
+    FancoilCreate, FancoilUpdate, FancoilOut, PermissionsUpdate, CommandReq, BulkCommandReq,
     AlarmAck, SettingsUpdate, ScheduleCreate, ScheduleUpdate,
 )
 from auth import (
@@ -363,6 +363,50 @@ async def send_command(fancoil_id: str, req: CommandReq, user: dict = Depends(ge
     return result
 
 
+@router.post("/fancoils/bulk-command")
+async def bulk_command(req: BulkCommandReq, user: dict = Depends(get_current_user)):
+    """Executa comando em massa:
+    - force_all: envia ESTADO/SET=false em todos (modo FORÇADO)
+    - unforce_all: envia ESTADO/SET=true em todos (modo AUTOMÁTICO)
+    - turn_on_all: garante FORÇADO + envia CMD/SET=true
+    - turn_off_all: garante FORÇADO + envia CMD/SET=false
+    Ignora fancoils offline/inativos. Retorna resumo por device."""
+    if user["role"] == "viewer":
+        raise HTTPException(status_code=403, detail="Viewer não pode enviar comandos")
+
+    query = {"active": True}
+    if req.fancoil_ids:
+        query["_id"] = {"$in": [ObjectId(i) for i in req.fancoil_ids]}
+    allowed = await allowed_fancoil_ids(user)
+
+    results = {"sent": [], "skipped": []}
+    async for fc in db.fancoils.find(query):
+        fid = str(fc["_id"])
+        if allowed is not None and fid not in allowed:
+            results["skipped"].append({"device_id": fc["device_id"], "reason": "sem permissão"})
+            continue
+        st = svc.get_state(fc["device_id"])
+        if not st.online:
+            results["skipped"].append({"device_id": fc["device_id"], "reason": "offline"})
+            continue
+        did = fc["device_id"]
+        try:
+            if req.action == "force_all":
+                await svc.publish_command(did, "ESTADO/SET", "false", user["id"])
+            elif req.action == "unforce_all":
+                await svc.publish_command(did, "ESTADO/SET", "true", user["id"])
+            elif req.action in ("turn_on_all", "turn_off_all"):
+                # Garante FORÇADO (CMD só funciona em FORÇADO)
+                if st.estado is not False:
+                    await svc.publish_command(did, "ESTADO/SET", "false", user["id"])
+                val = "true" if req.action == "turn_on_all" else "false"
+                await svc.publish_command(did, "CMD/SET", val, user["id"])
+            results["sent"].append({"device_id": did, "name": fc["name"]})
+        except Exception as e:
+            results["skipped"].append({"device_id": did, "reason": str(e)})
+    return results
+
+
 # =============== ALARMS ===============
 @router.get("/alarms")
 async def list_alarms(active_only: bool = False, limit: int = 500, user: dict = Depends(get_current_user)):
@@ -553,6 +597,24 @@ async def detected_devices(_: dict = Depends(require_admin)):
         d.pop("_id", None)
         out.append(d)
     return out
+
+
+@router.get("/admin/mqtt/sniff")
+async def mqtt_sniff_summary(_: dict = Depends(require_admin)):
+    """Live summary of raw MQTT traffic grouped by device_id."""
+    return {
+        "connected": svc.connected,
+        "simulation": svc.simulation,
+        "prefix": svc.topic_prefix,
+        "devices": svc.sniff_summary(),
+        "unknown_sample": svc.get_sniff_unknown()[-30:],
+    }
+
+
+@router.get("/admin/mqtt/sniff/{device_id}")
+async def mqtt_sniff_device(device_id: str, _: dict = Depends(require_admin)):
+    """Last ~50 raw messages received for a given device_id."""
+    return {"device_id": device_id, "events": svc.get_sniff(device_id)}
 
 
 # =============== SCHEDULES ===============

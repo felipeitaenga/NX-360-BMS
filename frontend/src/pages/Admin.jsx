@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "../components/ui/dialog";
 import { Checkbox } from "../components/ui/checkbox";
 import { toast } from "sonner";
-import { UserPlus, Trash2, KeyRound, Upload, RefreshCw, Settings as SettingsIcon, Pencil } from "lucide-react";
+import { UserPlus, Trash2, KeyRound, Upload, RefreshCw, Settings as SettingsIcon, Pencil, Radio, Activity } from "lucide-react";
 
 const MODULES = [
   { id: "home", label: "Início" },
@@ -587,11 +587,136 @@ export default function Admin() {
           <TabsTrigger value="users" data-testid="admin-tab-users">Usuários</TabsTrigger>
           <TabsTrigger value="fancoils" data-testid="admin-tab-fancoils">Fancoils</TabsTrigger>
           <TabsTrigger value="settings" data-testid="admin-tab-settings">Broker e Parâmetros</TabsTrigger>
+          <TabsTrigger value="diag" data-testid="admin-tab-diag">Diagnóstico MQTT</TabsTrigger>
         </TabsList>
         <TabsContent value="users"><UsersTab /></TabsContent>
         <TabsContent value="fancoils"><FancoilsTab /></TabsContent>
         <TabsContent value="settings"><SettingsTab /></TabsContent>
+        <TabsContent value="diag"><MqttDiagTab /></TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+function MqttDiagTab() {
+  const [selected, setSelected] = React.useState(null);
+  const { data: summary } = useQuery({
+    queryKey: ["mqtt-sniff"],
+    queryFn: async () => (await api.get("/admin/mqtt/sniff")).data,
+    refetchInterval: 3000,
+  });
+  const { data: devEvents } = useQuery({
+    queryKey: ["mqtt-sniff-device", selected],
+    queryFn: async () => (await api.get(`/admin/mqtt/sniff/${selected}`)).data,
+    enabled: !!selected,
+    refetchInterval: 2000,
+  });
+  const devices = summary?.devices || [];
+  const EXPECTED = ["STATUS", "MODO", "TEMPERATURA", "VAG", "CMD/SET", "ESTADO/SET", "SETPOINT/SET", "PRESSAO/SET"];
+  return (
+    <div className="space-y-4" data-testid="mqtt-diag">
+      <Card className="p-4">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Radio className={`w-4 h-4 ${summary?.connected ? "text-emerald-400" : "text-rose-400"}`} />
+            <span className="text-sm font-mono">Broker: {summary?.connected ? "CONECTADO" : "OFFLINE"}</span>
+          </div>
+          <div className="text-sm font-mono text-muted-foreground">
+            Prefixo: <b>{summary?.prefix || "—"}</b> · Modo: {summary?.simulation ? "SIMULAÇÃO" : "REAL"}
+          </div>
+          <div className="ml-auto text-xs text-muted-foreground">
+            Atualiza a cada 3s · Buffer: 50 msgs/device
+          </div>
+        </div>
+      </Card>
+
+      <Card className="p-0 overflow-hidden">
+        <div className="p-3 border-b border-border font-display text-sm uppercase tracking-widest flex items-center gap-2">
+          <Activity className="w-4 h-4 text-sky-400" />
+          Tópicos recebidos por device_id ({devices.length})
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-muted/40 text-left">
+              <tr>
+                <th className="p-2">device_id</th>
+                {EXPECTED.map((v) => <th key={v} className="p-2 font-mono">{v}</th>)}
+                <th className="p-2">Última msg</th>
+                <th className="p-2">#</th>
+                <th className="p-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {devices.map((d) => {
+                const varMap = Object.fromEntries((d.vars || []).map((v) => [v.var, v]));
+                return (
+                  <tr key={d.device_id} className="border-t border-border/60 hover:bg-accent/5" data-testid={`diag-row-${d.device_id}`}>
+                    <td className="p-2 font-mono font-bold">{d.device_id}</td>
+                    {EXPECTED.map((v) => (
+                      <td key={v} className="p-2">
+                        {varMap[v] ? (
+                          <span className="text-emerald-400 font-mono" title={varMap[v].ts}>
+                            {String(varMap[v].last_payload).slice(0, 10)}
+                          </span>
+                        ) : (
+                          <span className="text-rose-500/70">—</span>
+                        )}
+                      </td>
+                    ))}
+                    <td className="p-2 font-mono text-muted-foreground">
+                      {d.last_seen ? new Date(d.last_seen).toLocaleTimeString("pt-BR") : "—"}
+                    </td>
+                    <td className="p-2 font-mono">{d.msg_count}</td>
+                    <td className="p-2">
+                      <Button size="sm" variant="outline" onClick={() => setSelected(d.device_id)} data-testid={`diag-view-${d.device_id}`}>
+                        Ver bruto
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {devices.length === 0 && (
+                <tr><td colSpan={EXPECTED.length + 4} className="p-6 text-center text-muted-foreground">Nenhum tópico recebido ainda. Aguarde ~5s...</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {summary?.unknown_sample && summary.unknown_sample.length > 0 && (
+        <Card className="p-3">
+          <div className="font-display text-xs uppercase tracking-widest text-amber-400 mb-2">
+            Mensagens fora do prefixo {summary.prefix} ({summary.unknown_sample.length} recentes)
+          </div>
+          <div className="font-mono text-[11px] space-y-0.5 max-h-40 overflow-auto">
+            {summary.unknown_sample.slice().reverse().map((e, i) => (
+              <div key={i} className="text-muted-foreground">
+                <span className="text-slate-500">{e.ts?.slice(11, 19)}</span>{" "}
+                <span className="text-amber-300">{e.topic}</span>{" "}
+                <span className="text-emerald-400">= {e.payload}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader><DialogTitle>Tráfego bruto · {selected}</DialogTitle></DialogHeader>
+          <div className="max-h-[60vh] overflow-auto font-mono text-xs space-y-0.5" data-testid="diag-raw-list">
+            {(devEvents?.events || []).slice().reverse().map((e, i) => (
+              <div key={i} className="grid grid-cols-[90px_1fr_1fr] gap-3 border-b border-border/40 py-1">
+                <span className="text-slate-500">{e.ts?.slice(11, 19)}</span>
+                <span className="text-sky-300">{e.var}</span>
+                <span className="text-emerald-400">{e.payload}</span>
+              </div>
+            ))}
+            {(!devEvents?.events || devEvents.events.length === 0) && (
+              <div className="text-muted-foreground p-4 text-center">Sem mensagens no buffer para este device.</div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
