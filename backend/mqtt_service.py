@@ -77,6 +77,8 @@ class MQTTService:
         self.sim_schedule_end = 21  # 21h
         # Pending commands waiting for echo
         self.pending_cmds: Dict[str, dict] = {}
+        # Last broker error message for UI feedback
+        self.last_error: Optional[str] = None
 
     def get_state(self, device_id: str) -> FancoilState:
         s = self.states.get(device_id)
@@ -127,6 +129,7 @@ class MQTTService:
 
     async def _start_simulation(self):
         self.connected = True
+        self.last_error = None
         logger.info("MQTT em modo SIMULAÇÃO")
         self._sim_task = asyncio.create_task(self._simulation_loop())
 
@@ -134,31 +137,57 @@ class MQTTService:
         try:
             import paho.mqtt.client as mqtt
         except ImportError:
-            logger.error("paho-mqtt não instalado")
+            self.last_error = "paho-mqtt não instalado"
+            logger.error(self.last_error)
             return
         cfg = self.broker_cfg
         if not cfg.get("host"):
-            logger.warning("Broker MQTT não configurado; mantendo desconectado")
+            self.last_error = "Broker MQTT não configurado (host vazio)"
+            logger.warning(self.last_error)
             self.connected = False
             return
+        host = str(cfg["host"]).strip()
+        port = int(cfg.get("port", 1883))
+        use_tls = bool(cfg.get("tls", False))
         client = mqtt.Client(client_id=cfg.get("client_id", "pilares-backend"), protocol=mqtt.MQTTv311)
         if cfg.get("username"):
             client.username_pw_set(cfg["username"], cfg.get("password", ""))
-        if cfg.get("tls", True):
-            client.tls_set()
+        if use_tls:
+            try:
+                client.tls_set()
+            except Exception as e:
+                self.last_error = f"Erro ao configurar TLS: {e}"
+                logger.error(self.last_error)
+                return
+
+        rc_messages = {
+            0: "sucesso",
+            1: "versão de protocolo não aceita",
+            2: "ID de cliente rejeitado",
+            3: "servidor indisponível",
+            4: "usuário ou senha incorretos",
+            5: "não autorizado",
+        }
 
         def on_connect(c, u, flags, rc):
             if rc == 0:
                 self.connected = True
+                self.last_error = None
                 c.subscribe(f"{self.topic_prefix}/+/#", qos=1)
-                logger.info("MQTT conectado")
+                logger.info(f"MQTT conectado em {host}:{port} (TLS={use_tls})")
             else:
                 self.connected = False
-                logger.error(f"MQTT falha conexão rc={rc}")
+                msg = rc_messages.get(rc, f"código {rc}")
+                self.last_error = f"Falha de conexão MQTT: {msg} (rc={rc})"
+                logger.error(self.last_error)
 
         def on_disconnect(c, u, rc):
             self.connected = False
-            logger.warning(f"MQTT desconectado rc={rc}")
+            if rc != 0:
+                self.last_error = f"Conexão MQTT caiu (rc={rc})"
+                logger.warning(self.last_error)
+            else:
+                logger.info("MQTT desconectado")
 
         def on_message(c, u, msg):
             try:
@@ -173,12 +202,76 @@ class MQTTService:
         client.on_disconnect = on_disconnect
         client.on_message = on_message
         try:
-            client.connect_async(cfg["host"], int(cfg.get("port", 8883)), keepalive=60)
+            # Synchronous connect to catch socket errors (wrong port, host unreachable, TLS mismatch)
+            client.connect(host, port, keepalive=60)
             client.loop_start()
             self._client = client
-        except Exception as e:
-            logger.error(f"Erro conectando MQTT: {e}")
+            logger.info(f"MQTT inicializando conexão com {host}:{port} TLS={use_tls}")
+        except ConnectionRefusedError:
+            self.last_error = f"Conexão recusada em {host}:{port}. Verifique se a porta está correta (1883 sem TLS / 8883 com TLS)."
+            logger.error(self.last_error)
             self.connected = False
+        except OSError as e:
+            self.last_error = f"Erro de rede ao conectar em {host}:{port} — {e}"
+            logger.error(self.last_error)
+            self.connected = False
+        except Exception as e:
+            self.last_error = f"Erro ao conectar MQTT: {e}"
+            logger.exception(self.last_error)
+            self.connected = False
+
+    async def test_connection(self, host: str, port: int, username: str = "",
+                              password: str = "", tls: bool = False,
+                              client_id: str = "pilares-test") -> dict:
+        """Try to connect briefly and return success/error without impacting the running client."""
+        try:
+            import paho.mqtt.client as mqtt
+        except ImportError:
+            return {"ok": False, "error": "paho-mqtt não instalado"}
+        if not host:
+            return {"ok": False, "error": "Host vazio"}
+        host = str(host).strip()
+        port = int(port)
+        import threading, time as _time
+        result = {"ok": False, "error": "Timeout aguardando resposta do broker"}
+        done = threading.Event()
+        c = mqtt.Client(client_id=f"{client_id}-test", protocol=mqtt.MQTTv311)
+        if username:
+            c.username_pw_set(username, password or "")
+        if tls:
+            try:
+                c.tls_set()
+            except Exception as e:
+                return {"ok": False, "error": f"TLS: {e}"}
+        rc_msgs = {0: "sucesso", 1: "versão de protocolo não aceita",
+                   2: "ID de cliente rejeitado", 3: "servidor indisponível",
+                   4: "usuário ou senha incorretos", 5: "não autorizado"}
+
+        def _on_connect(cli, u, flags, rc):
+            if rc == 0:
+                result["ok"] = True
+                result["error"] = None
+            else:
+                result["ok"] = False
+                result["error"] = f"Rejeitado pelo broker: {rc_msgs.get(rc, 'código ' + str(rc))}"
+            done.set()
+        c.on_connect = _on_connect
+        try:
+            c.connect(host, port, keepalive=10)
+        except ConnectionRefusedError:
+            return {"ok": False, "error": f"Conexão recusada em {host}:{port}. A porta ou o TLS podem estar errados (1883 sem TLS / 8883 com TLS)."}
+        except OSError as e:
+            return {"ok": False, "error": f"Erro de rede: {e}"}
+        except Exception as e:
+            return {"ok": False, "error": f"{e}"}
+        c.loop_start()
+        done.wait(timeout=6)
+        try:
+            c.loop_stop()
+            c.disconnect()
+        except Exception:
+            pass
+        return result
 
     async def _handle_message(self, topic: str, payload: str):
         parts = topic.split("/")

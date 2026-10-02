@@ -478,20 +478,66 @@ function SettingsTab() {
       <Card className="p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-display text-sm uppercase tracking-widest">Broker MQTT</h3>
-          <div className={`font-mono text-xs uppercase px-3 py-1 rounded border ${s.broker_connected ? "border-emerald-500 text-emerald-400 bg-emerald-500/10" : "border-red-500 text-red-400 bg-red-500/10"}`}>
-            {s.broker_connected ? "● Conectado" : "● Desconectado"}
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                try {
+                  const r = await api.post("/admin/broker/test", {
+                    host: form.broker.host, port: parseInt(form.broker.port) || 1883,
+                    username: form.broker.username || "", password: form.broker.password || "",
+                    tls: !!form.broker.tls, client_id: form.broker.client_id || "pilares-backend",
+                  });
+                  if (r.data.ok) toast.success("Conexão com broker OK");
+                  else toast.error(r.data.error || "Falha na conexão");
+                } catch (e) { toast.error(formatApiError(e)); }
+              }}
+              data-testid="test-broker-button"
+            >
+              Testar conexão
+            </Button>
+            <div className={`font-mono text-xs uppercase px-3 py-1 rounded border ${s.broker_connected ? "border-emerald-500 text-emerald-400 bg-emerald-500/10" : "border-red-500 text-red-400 bg-red-500/10"}`} data-testid="broker-status">
+              {s.broker_connected ? "● Conectado" : "● Desconectado"}
+            </div>
           </div>
         </div>
+        {!s.broker_connected && s.broker_last_error && (
+          <div className="mb-3 bg-red-500/10 border border-red-500/40 text-red-300 text-xs px-3 py-2 rounded" data-testid="broker-last-error">
+            {s.broker_last_error}
+          </div>
+        )}
+        {form.simulation_enabled && (
+          <div className="mb-3 bg-sky-500/10 border border-sky-500/40 text-sky-300 text-xs px-3 py-2 rounded">
+            Modo simulação está ligado. Desative-o abaixo para o backend tentar conectar no broker real.
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div><Label>Host</Label><Input value={form.broker.host || ""} onChange={(e) => updBroker("host", e.target.value)} /></div>
-          <div><Label>Porta</Label><Input type="number" value={form.broker.port} onChange={(e) => updBroker("port", parseInt(e.target.value))} /></div>
-          <div><Label>Client ID</Label><Input value={form.broker.client_id || ""} onChange={(e) => updBroker("client_id", e.target.value)} /></div>
-          <div><Label>Usuário</Label><Input value={form.broker.username || ""} onChange={(e) => updBroker("username", e.target.value)} /></div>
-          <div><Label>Senha</Label><Input type="password" value={form.broker.password || ""} onChange={(e) => updBroker("password", e.target.value)} /></div>
-          <div><Label>Prefixo tópicos</Label><Input value={form.broker.topic_prefix || ""} onChange={(e) => updBroker("topic_prefix", e.target.value)} /></div>
+          <div><Label>Host</Label><Input value={form.broker.host || ""} onChange={(e) => updBroker("host", e.target.value)} data-testid="broker-host" placeholder="156.67.82.199" /></div>
+          <div>
+            <Label>Porta</Label>
+            <Input type="number" value={form.broker.port} onChange={(e) => updBroker("port", parseInt(e.target.value) || 0)} data-testid="broker-port" />
+            <div className="text-[10px] text-muted-foreground font-mono mt-1">1883 sem TLS · 8883 com TLS</div>
+          </div>
+          <div><Label>Client ID</Label><Input value={form.broker.client_id || ""} onChange={(e) => updBroker("client_id", e.target.value)} data-testid="broker-client-id" /></div>
+          <div><Label>Usuário</Label><Input value={form.broker.username || ""} onChange={(e) => updBroker("username", e.target.value)} data-testid="broker-username" /></div>
+          <div><Label>Senha</Label><Input type="password" value={form.broker.password || ""} onChange={(e) => updBroker("password", e.target.value)} data-testid="broker-password" /></div>
+          <div><Label>Prefixo tópicos</Label><Input value={form.broker.topic_prefix || ""} onChange={(e) => updBroker("topic_prefix", e.target.value)} data-testid="broker-prefix" /></div>
           <label className="flex items-center gap-2 mt-2 col-span-full">
-            <Switch checked={form.broker.tls} onCheckedChange={(v) => updBroker("tls", v)} />
-            <span>TLS (porta 8883)</span>
+            <Switch
+              checked={!!form.broker.tls}
+              onCheckedChange={(v) => setForm((p) => ({
+                ...p,
+                broker: {
+                  ...p.broker, tls: v,
+                  port: (!v && (p.broker.port === 8883 || !p.broker.port)) ? 1883
+                       : (v && (p.broker.port === 1883 || !p.broker.port)) ? 8883
+                       : p.broker.port,
+                },
+              }))}
+              data-testid="broker-tls-toggle"
+            />
+            <span>TLS/SSL ({form.broker.tls ? "porta padrão 8883" : "porta padrão 1883"})</span>
           </label>
         </div>
       </Card>

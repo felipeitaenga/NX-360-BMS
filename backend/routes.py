@@ -7,6 +7,7 @@ from datetime import datetime, timezone, timedelta
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Response, Request, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from db import db
 from models import (
@@ -485,6 +486,7 @@ async def get_settings(_: dict = Depends(require_admin)):
     s = await db.settings.find_one({"_id": "global"}) or {}
     s.pop("_id", None)
     s["broker_connected"] = svc.connected
+    s["broker_last_error"] = svc.last_error
     s["simulation_enabled"] = s.get("simulation_enabled", True)
     return s
 
@@ -501,7 +503,39 @@ async def update_settings(req: SettingsUpdate, _: dict = Depends(require_admin))
     s = await db.settings.find_one({"_id": "global"}) or {}
     s.pop("_id", None)
     s["broker_connected"] = svc.connected
+    s["broker_last_error"] = svc.last_error
     return s
+
+
+class BrokerTestReq(BaseModel):
+    host: str
+    port: int = 1883
+    username: str = ""
+    password: str = ""
+    tls: bool = False
+    client_id: str = "pilares-backend"
+
+
+@router.post("/admin/broker/test")
+async def test_broker_connection(req: BrokerTestReq, _: dict = Depends(require_admin)):
+    """Try to connect to the broker without touching the running client. Blocking op; short timeout."""
+    import asyncio as _asyncio
+    result = await _asyncio.to_thread(
+        _sync_test, req.host, req.port, req.username, req.password, req.tls, req.client_id
+    )
+    return result
+
+
+def _sync_test(host, port, username, password, tls, client_id):
+    import asyncio as _asyncio
+    loop = _asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(
+            svc.test_connection(host=host, port=port, username=username,
+                                password=password, tls=tls, client_id=client_id)
+        )
+    finally:
+        loop.close()
 
 
 @router.get("/admin/detected-devices")

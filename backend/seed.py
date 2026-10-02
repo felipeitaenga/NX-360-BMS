@@ -66,8 +66,8 @@ async def seed_settings():
         "_id": "global",
         "simulation_enabled": True,
         "broker": {
-            "host": "", "port": 8883, "username": "", "password": "",
-            "tls": True, "client_id": "pilares-backend", "topic_prefix": "TJS",
+            "host": "", "port": 1883, "username": "", "password": "",
+            "tls": False, "client_id": "pilares-backend", "topic_prefix": "TJS",
         },
         "offline_timeout_seconds": 300,
         "command_timeout_seconds": 60,

@@ -126,10 +126,10 @@ class AlarmAck(BaseModel):
 # -------- Settings --------
 class BrokerConfig(BaseModel):
     host: str = ""
-    port: int = 8883
+    port: int = 1883
     username: str = ""
     password: str = ""
-    tls: bool = True
+    tls: bool = False
     client_id: str = "pilares-backend"
     topic_prefix: str = "TJS"
 
