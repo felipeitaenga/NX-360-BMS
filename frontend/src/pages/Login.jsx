@@ -97,7 +97,7 @@ export default function Login() {
         </form>
 
         <div className="mt-6 pt-6 border-t border-slate-800 text-center text-xs text-slate-500 font-mono uppercase tracking-widest">
-          Sistema de controle predial
+          Sistema de Automação Predial
         </div>
       </Card>
     </div>
