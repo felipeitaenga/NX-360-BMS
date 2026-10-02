@@ -93,7 +93,18 @@ export default function FancoilSchematicSVG({ running, temperature, setpoint, va
         {running && <circle r="78" fill="url(#fanGlow)" />}
         <circle r="56" fill="hsl(var(--card))" stroke="currentColor" strokeOpacity="0.4" strokeWidth="2" />
         <circle r="52" fill="none" stroke="#334155" strokeWidth="1" strokeDasharray="2 4" />
-        <g style={{ transformOrigin: "center", animation: running ? "spin 0.25s linear infinite" : "none" }}>
+        <g key={running ? "spin-on" : "spin-off"}>
+          {running && (
+            <animateTransform
+              attributeName="transform"
+              attributeType="XML"
+              type="rotate"
+              from="0 0 0"
+              to="360 0 0"
+              dur="0.6s"
+              repeatCount="indefinite"
+            />
+          )}
           {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
             <path
               key={angle}

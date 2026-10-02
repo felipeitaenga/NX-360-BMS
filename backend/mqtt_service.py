@@ -298,13 +298,14 @@ class MQTTService:
 
         if var == "ONLINE":
             st.online = payload == "1"
-        elif var == "STATUS":
+        elif var in ("STATUS", "ST"):
             st.status = payload == "1"
             st.online = True
-        elif var == "MODO":
-            st.modo = payload == "1"
+        elif var in ("MODO", "MODE", "QUADRO", "AM"):
+            # AM/MODE/QUADRO = modo do quadro elétrico (AUTO/MANUAL)
+            st.modo = payload == "1" or payload.lower() in ("true", "auto", "automatico", "automático")
             st.online = True
-        elif var == "TEMPERATURA":
+        elif var in ("TEMPERATURA", "TEMP", "CT"):
             st.online = True
             if payload.upper() == "ERRO":
                 st.temp_error = True
@@ -321,22 +322,27 @@ class MQTTService:
                 st.vag = float(payload)
             except ValueError:
                 pass
-        elif var == "ESTADO/SET":
-            st.estado = payload.lower() == "true"
-        elif var == "CMD/SET":
-            st.cmd = payload.lower() == "true"
-        elif var == "SETPOINT/SET":
+        elif var in ("ESTADO/SET", "ESTADO", "COND", "COND/SET"):
+            # ESTADO/COND: true=NORMAL (programação), false=FORÇADO
+            st.estado = payload.lower() == "true" or payload == "1"
+            st.online = True
+        elif var in ("CMD/SET", "CMD", "COMANDO", "COMANDO/SET"):
+            st.cmd = payload.lower() == "true" or payload == "1"
+            st.online = True
+        elif var in ("SETPOINT/SET", "SETPOINT"):
             try:
                 v = float(payload)
                 if 10.0 <= v <= 35.0:
                     st.setpoint = v
+                    st.online = True
             except ValueError:
                 pass
-        elif var == "PRESSAO/SET":
+        elif var in ("PRESSAO/SET", "PRESSAO", "PRESSURE", "PRESSURE/SET"):
             try:
                 v = float(payload)
                 if 0.0 <= v <= 100.0:
                     st.pressure = v
+                    st.online = True
             except ValueError:
                 pass
         else:
