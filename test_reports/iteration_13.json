@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 13 — Bulk fancoil commands + Admin MQTT sniff diagnostic + stability of unique client_id. Backend: 11/11 pytest tests pass in 72s, including a 70s loop verifying broker stays connected. Frontend: /ar-condicionado shows all 4 bulk buttons (bulk-force-all, bulk-turn-on-all, bulk-turn-off-all, bulk-unforce-all), AlertDialogs open on click, Cancel closes without side-effects, Confirm issues POST /api/fancoils/bulk-command and shows toast 'Modo AUTOMÁTICO: 13 enviado(s), 2 ignorado(s)' matching 13 online + 2 offline (CJ031 A100, CJ092 A274). /admin → Diagnóstico MQTT tab (data-testid=admin-tab-diag) renders a 27-row table of device_ids with STATUS/MODO/TEMPERATURA/VAG/CMD-SET/ESTADO-SET/SETPOINT-SET/PRESSAO-SET columns; 'Ver bruto' opens a dialog showing timeline of ts/var/payload events. Broker remained connected the full test window — zero 'MQTT desconectado' log entries since the current unique-id client (pilares-backend-b37cf023) came up at 22:42:54 UTC.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/admin → Diagnóstico MQTT", "issues": ["Device 0E60 shows TEMPERATURA=-127.0 (sentinel for disconnected/invalid DS18B20 sensor). Rendered as green '-127.0' — consider flagging as alarm/red when value is -127 or NaN, so operators spot the dead sensor at a glance."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter13_bulk_and_sniff.py",
+    "/app/test_reports/pytest/iter13.xml"
+  ],
+  "action_items": [
+    "(Optional UX) Colorize invalid sensor values (-127 or 'ERRO') in red on the Diagnóstico MQTT table instead of plain emerald font.",
+    "(Housekeeping) The MQTT client subscribes to '#' (whole broker tree) for diagnostics — fine today, but on busier brokers this will balloon memory/CPU. Consider gating it behind an admin toggle or scoping to a few more targeted prefixes."
+  ],
+  "critical_code_review_comments": [
+    "mqtt_service._start_real now appends uuid4()[:8] to the configured client_id — this resolves the disconnect loop (prior iterations saw a disconnect every 10-60s when another supervisório used the same base id). Verified: zero disconnects in 7 min 50s of observation + 70s stability loop test.",
+    "routes.bulk_command correctly: (a) blocks viewer (403), (b) skips offline/unauthorized with reason, (c) chains ESTADO/SET=false then CMD/SET for turn_on_all/turn_off_all only when st.estado is not already False (saves one MQTT publish per device). LGTM.",
+    "routes.bulk_command does NOT return non-200 if 0 fancoils sent — intentional (empty 'sent' list is a valid state). Good.",
+    "mqtt_service._record_sniff runs in the paho thread and mutates deques — deques are thread-safe for append/popleft, but sniff_summary() iterates sniff_per_device.items() in the asyncio thread while the paho thread may insert a brand-new key. In CPython the GIL protects dict mutation, but a 'dict changed size during iteration' RuntimeError is theoretically possible. Low-risk; could wrap with list(self.sniff_per_device.items()) snapshot.",
+    "routes.mqtt_sniff_summary trims unknown_sample to last 30 (good — the firmware floods /SISTEMA/* topics every second so without the slice the payload would be huge).",
+    "frontend Admin.jsx MqttDiagTab polls /admin/mqtt/sniff every 3s and /admin/mqtt/sniff/{id} every 2s when dialog open — fine for a diagnostic view that is only on the admin tab.",
+    "frontend Fancoils.jsx disables all 4 bulk buttons while any one is busy (disabled={busy !== null}) — prevents double-click overlapping, good UX."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter13_bulk_and_sniff.py (new)"],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% (all four bulk buttons present and functional; MQTT diag table with 27 devices and raw-dialog validated)"},
+  "test_credentials": "felipejferreira@gmail.com / @Pilares1 (works). Test viewer test_viewer_iter13@example.com / Viewer@123 (ephemeral — created & deleted inside pytest fixture).",
+  "seed_data_creation": "Pytest fixture creates+deletes test_viewer_iter13@example.com. No other seed data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iter13 validates: (a) 4 bulk actions (force_all / unforce_all / turn_on_all / turn_off_all) return {sent, skipped} and respect viewer-RBAC; (b) 2 new sniff endpoints (summary + per-device) require admin and expose live broker traffic; (c) MQTT disconnect loop RESOLVED by appending uuid4() suffix to client_id. 70s stability test is embedded in pytest. The firmware publishes /SISTEMA/* under no prefix (clock sync), hence the 'unknown_sample' list in the sniff response is populated as expected. Device 0E60 publishes TEMPERATURA=-127.0 (DS18B20 sensor fault) — flagged as UX improvement, not a bug.",
+  "rca of the issue": "Previous disconnect loop RCA: paho's broker kicks older clients when a new MQTT client connects with the same client_id (MQTT spec §3.1.4). The supervisório + ESP32 fleet also use 'pilares-backend' style ids; every time any of them reconnected, our backend got booted. Fix: base_id + '-' + uuid4().hex[:8] per connect. Verified via `grep 'MQTT desconectado' backend.err.log` returning 0 lines since 22:42:54 UTC (now 22:50 — >7 min + 70s stability loop)."
+}

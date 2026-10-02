@@ -29,11 +29,20 @@ Aplicativo web em pt-BR para automação predial. Começou focado em HVAC (fanco
 ### Lighting + Hydraulics
 - "Em breve"; entidade dispositivo preparada no backend
 
+## Novidades (02/10/2026 — iteração 13)
+- **Comandos em massa** na tela `/ar-condicionado`: Forçar Todos / Ligar Todos / Desligar Todos / Voltar p/ Automático. Cada ação pede confirmação (AlertDialog) e pula dispositivos offline. Endpoint: `POST /api/fancoils/bulk-command`.
+- **Diagnóstico MQTT ao vivo** em `/admin → Diagnóstico MQTT`: tabela por device_id com todas as variáveis que cada ESP32 publica, horário da última mensagem e botão para ver o tráfego bruto. Buffer de 50 msgs/device. Endpoints: `GET /api/admin/mqtt/sniff` e `GET /api/admin/mqtt/sniff/{device_id}`.
+- **Fix do loop de desconexão** do broker: `client_id` passou a ser único por conexão (`pilares-backend-<uuid8>`) para não colidir com o supervisório/outros clientes. 70s sem desconectar nos testes.
+- **Causa raiz do "só CJ101 funcionava"** diagnosticada: firmware ESP32 publica STATUS/MODO/SETPOINT somente na mudança — o loop de desconexão fazia o backend perder esses eventos pontuais. Além disso, alguns ESP32s (CJ031/A100 inclusive) publicam fora do prefixo `TJS/` — agora visível na aba de diagnóstico.
+
 ## Credenciais
 Ver `/app/memory/test_credentials.md` (admin: felipejferreira@gmail.com / @Pilares1)
 
 ## Backlog
+- P1: mapeamento tópico→variável por fancoil no Admin (para ESP32s que publicam fora do padrão, ex.: `/A100/TEMPERATURA` sem prefixo `TJS/`)
 - P1: dashboards por sistema (HVAC/ilum/hidráulica) e indicadores agregados por andar
 - P1: módulos Iluminação e Hidráulica reais com dispositivos genéricos
+- P1: upload de imagem real do edifício e logo via Admin
+- P2: comandos em massa com seleção parcial (checkbox por fancoil), presets de horário
 - P2: alertas por e-mail/SMS, agendamento multi-fancoil, exportação PDF, histórico de pressão
 - P2: integração com câmeras / controle de acesso (BMS completo)
