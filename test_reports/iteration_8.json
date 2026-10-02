@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 8 frontend-only re-test. Verified that fancoil filtering by active !== false is correctly applied on operational screens (/, /ar-condicionado, /mapa-calor) while Admin Settings continues to list all 32 fancoils for editing. All 4 scenarios from the review request PASS.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "ar_condicionado_admin": {
+      "status": "PASS",
+      "details": "Only 1 fancoil card rendered with data-testid='fancoil-card-cj101'. Summary bar shows TOTAL=1, DESLIGADOS=1. No SIM* cards present."
+    },
+    "home_admin": {
+      "status": "PASS",
+      "details": "Card 'Ligados / Total' shows '0/1' (not /32). Temp. Média shows 20.6 °C computed only from active CJ101."
+    },
+    "admin_fancoils_tab": {
+      "status": "PASS",
+      "details": "Settings → Fancoils tab lists all 32 fancoils (CJ011..CJ172 including the 31 inactive SIM* ones). Edit modal exposes 'Fancoil ativo' Switch with data-testid='edit-fancoil-active' (persisted field)."
+    },
+    "mapa_calor": {
+      "status": "PASS",
+      "details": "Heatmap page shows only CJ101 (backend filter already correct)."
+    }
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fancoils.jsx line 98 and Home.jsx line 45 correctly apply fc.active !== false filter.",
+    "Admin.jsx FancoilsTab correctly fetches all fancoils without filter so admin can edit inactive ones; active toggle present in edit modal (line 430)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped as requested)", "frontend": "100%"},
+  "test_credentials": "Admin felipejferreira@gmail.com / NovaSenha123 — login OK",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 8 passed cleanly. Frontend filter for fancoil.active !== false working on operational views; admin settings continues listing all fancoils. Backend not re-tested per request (stable with 1 active + 31 inactive)."
+}
