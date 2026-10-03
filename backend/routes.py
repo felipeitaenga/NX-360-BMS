@@ -14,6 +14,7 @@ from models import (
     LoginReq, ChangePasswordReq, ResetPasswordAdminReq, UserCreate, UserUpdate, UserOut,
     FancoilCreate, FancoilUpdate, FancoilOut, PermissionsUpdate, CommandReq, BulkCommandReq,
     AlarmAck, SettingsUpdate, ScheduleCreate, ScheduleUpdate,
+    TopicMappingCreate, TopicMappingUpdate,
 )
 from auth import (
     hash_password, verify_password, create_access_token, get_current_user,
@@ -615,6 +616,68 @@ async def mqtt_sniff_summary(_: dict = Depends(require_admin)):
 async def mqtt_sniff_device(device_id: str, _: dict = Depends(require_admin)):
     """Last ~50 raw messages received for a given device_id."""
     return {"device_id": device_id, "events": svc.get_sniff(device_id)}
+
+
+# =============== TOPIC MAPPINGS (admin only) ===============
+def _mapping_out(m: dict) -> dict:
+    return {
+        "id": str(m["_id"]),
+        "topic": m["topic"],
+        "target_device_id": m["target_device_id"],
+        "target_var": m["target_var"],
+        "enabled": m.get("enabled", True),
+    }
+
+
+@router.get("/admin/topic-mappings")
+async def list_topic_mappings(_: dict = Depends(require_admin)):
+    out = []
+    async for m in db.topic_mappings.find({}).sort("topic", 1):
+        out.append(_mapping_out(m))
+    return out
+
+
+@router.post("/admin/topic-mappings")
+async def create_topic_mapping(req: TopicMappingCreate, _: dict = Depends(require_admin)):
+    topic = req.topic.strip()
+    if not topic:
+        raise HTTPException(status_code=400, detail="Tópico vazio")
+    existing = await db.topic_mappings.find_one({"topic": topic})
+    if existing:
+        raise HTTPException(status_code=400, detail="Já existe um mapeamento para este tópico")
+    doc = {
+        "topic": topic,
+        "target_device_id": req.target_device_id.strip(),
+        "target_var": req.target_var,
+        "enabled": True,
+        "created_at": now_iso(),
+    }
+    res = await db.topic_mappings.insert_one(doc)
+    doc["_id"] = res.inserted_id
+    await svc.reload_mappings()
+    return _mapping_out(doc)
+
+
+@router.patch("/admin/topic-mappings/{mid}")
+async def update_topic_mapping(mid: str, req: TopicMappingUpdate, _: dict = Depends(require_admin)):
+    update = {k: v for k, v in req.dict(exclude_unset=True).items() if v is not None}
+    if not update:
+        raise HTTPException(status_code=400, detail="Nada para atualizar")
+    r = await db.topic_mappings.update_one({"_id": ObjectId(mid)}, {"$set": update})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Mapeamento não encontrado")
+    await svc.reload_mappings()
+    doc = await db.topic_mappings.find_one({"_id": ObjectId(mid)})
+    return _mapping_out(doc)
+
+
+@router.delete("/admin/topic-mappings/{mid}")
+async def delete_topic_mapping(mid: str, _: dict = Depends(require_admin)):
+    r = await db.topic_mappings.delete_one({"_id": ObjectId(mid)})
+    if r.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Mapeamento não encontrado")
+    await svc.reload_mappings()
+    return {"ok": True}
 
 
 # =============== SCHEDULES ===============

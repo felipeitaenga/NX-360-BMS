@@ -123,6 +123,25 @@ class BulkCommandReq(BaseModel):
     fancoil_ids: List[str] = Field(default_factory=list)  # empty = todos autorizados
 
 
+# -------- Topic mappings (irregular firmware) --------
+class TopicMappingCreate(BaseModel):
+    topic: str  # tópico exato publicado pelo ESP32 (ex.: "/A100/TEMPERATURA")
+    target_device_id: str  # device_id interno do fancoil (ex.: "A100")
+    target_var: Literal[
+        "ONLINE", "STATUS", "MODO", "TEMPERATURA", "VAG",
+        "ESTADO/SET", "CMD/SET", "SETPOINT/SET", "PRESSAO/SET",
+    ]
+
+
+class TopicMappingUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    target_device_id: Optional[str] = None
+    target_var: Optional[Literal[
+        "ONLINE", "STATUS", "MODO", "TEMPERATURA", "VAG",
+        "ESTADO/SET", "CMD/SET", "SETPOINT/SET", "PRESSAO/SET",
+    ]] = None
+
+
 # -------- Alarms --------
 class AlarmAck(BaseModel):
     alarm_id: str

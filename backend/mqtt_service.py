@@ -90,6 +90,9 @@ class MQTTService:
         self.pending_cmds: Dict[str, dict] = {}
         # Last broker error message for UI feedback
         self.last_error: Optional[str] = None
+        # Custom topic -> (device_id, var) mappings for ESP32s publishing outside
+        # the standard "{prefix}/{device_id}/{var}" scheme (loaded from DB).
+        self.topic_mappings: Dict[str, dict] = {}
 
     def get_state(self, device_id: str) -> FancoilState:
         s = self.states.get(device_id)
@@ -108,6 +111,8 @@ class MQTTService:
         async for fc in db.fancoils.find({}):
             st = self.get_state(fc["device_id"])
             st.setpoint = fc.get("setpoint_min", 22.0)
+        # Load custom topic mappings
+        await self.reload_mappings()
         # Restore last-known telemetry from persisted store so values survive restart
         if not self.simulation:
             async for doc in db.device_states.find({}):
@@ -316,7 +321,17 @@ class MQTTService:
         parts = topic.split("/")
         entry = {"ts": ts, "topic": topic, "payload": payload[:120]}
         self.sniff_all.append(entry)
-        # Match configured prefix (case-insensitive) and extract device id
+        # 1) Custom mapping: show under the mapped device
+        m = self.topic_mappings.get(topic)
+        if m:
+            did = m["device_id"]
+            buf = self.sniff_per_device.get(did)
+            if buf is None:
+                buf = deque(maxlen=SNIFF_PER_DEVICE)
+                self.sniff_per_device[did] = buf
+            buf.append({"ts": ts, "var": m["var"], "payload": payload[:120], "mapped_from": topic})
+            return
+        # 2) Match configured prefix (case-insensitive) and extract device id
         if len(parts) >= 3 and parts[0].lower() == self.topic_prefix.lower():
             device_id = parts[1]
             buf = self.sniff_per_device.get(device_id)
@@ -356,6 +371,13 @@ class MQTTService:
         return out
 
     async def _handle_message(self, topic: str, payload: str):
+        # 1) Custom mapping first (allows firmwares that publish outside the standard
+        #    "{prefix}/{device_id}/{var}" scheme — e.g., "/A100/TEMPERATURA")
+        m = self.topic_mappings.get(topic)
+        if m:
+            await self._apply_update(m["device_id"], m["var"], payload)
+            return
+        # 2) Standard prefix-based routing
         parts = topic.split("/")
         if len(parts) < 3:
             return
@@ -366,6 +388,18 @@ class MQTTService:
         device_id = parts[1]
         var = "/".join(parts[2:])
         await self._apply_update(device_id, var, payload)
+
+    async def reload_mappings(self):
+        """Reload custom topic mappings from DB into memory."""
+        new_map: Dict[str, dict] = {}
+        async for m in db.topic_mappings.find({"enabled": {"$ne": False}}):
+            topic = m.get("topic")
+            did = m.get("target_device_id")
+            var = m.get("target_var")
+            if topic and did and var:
+                new_map[topic] = {"device_id": did, "var": var}
+        self.topic_mappings = new_map
+        logger.info(f"Topic mappings carregados: {len(new_map)}")
 
     async def _apply_update(self, device_id: str, var: str, payload: str):
         st = self.get_state(device_id)

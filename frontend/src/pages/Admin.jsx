@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "../components/ui/dialog";
 import { Checkbox } from "../components/ui/checkbox";
 import { toast } from "sonner";
-import { UserPlus, Trash2, KeyRound, Upload, RefreshCw, Settings as SettingsIcon, Pencil, Radio, Activity } from "lucide-react";
+import { UserPlus, Trash2, KeyRound, Upload, RefreshCw, Settings as SettingsIcon, Pencil, Radio, Activity, Link2, ArrowDownToLine, Plus } from "lucide-react";
 
 const MODULES = [
   { id: "home", label: "Início" },
@@ -599,7 +599,9 @@ export default function Admin() {
 }
 
 function MqttDiagTab() {
+  const qc = useQueryClient();
   const [selected, setSelected] = React.useState(null);
+  const [mapForm, setMapForm] = React.useState({ topic: "", target_device_id: "", target_var: "TEMPERATURA" });
   const { data: summary } = useQuery({
     queryKey: ["mqtt-sniff"],
     queryFn: async () => (await api.get("/admin/mqtt/sniff")).data,
@@ -611,8 +613,58 @@ function MqttDiagTab() {
     enabled: !!selected,
     refetchInterval: 2000,
   });
+  const { data: mappings = [] } = useQuery({
+    queryKey: ["topic-mappings"],
+    queryFn: async () => (await api.get("/admin/topic-mappings")).data,
+  });
+  const { data: fancoilsList = [] } = useQuery({
+    queryKey: ["fancoils-for-mapping"],
+    queryFn: async () => (await api.get("/fancoils")).data,
+  });
   const devices = summary?.devices || [];
   const EXPECTED = ["STATUS", "MODO", "TEMPERATURA", "VAG", "CMD/SET", "ESTADO/SET", "SETPOINT/SET", "PRESSAO/SET"];
+  const VAR_OPTIONS = ["ONLINE", "STATUS", "MODO", "TEMPERATURA", "VAG", "ESTADO/SET", "CMD/SET", "SETPOINT/SET", "PRESSAO/SET"];
+
+  const addMapping = async () => {
+    try {
+      if (!mapForm.topic || !mapForm.target_device_id) {
+        toast.error("Informe o tópico e o device_id destino");
+        return;
+      }
+      await api.post("/admin/topic-mappings", mapForm);
+      toast.success("Mapeamento criado");
+      setMapForm({ topic: "", target_device_id: "", target_var: "TEMPERATURA" });
+      qc.invalidateQueries({ queryKey: ["topic-mappings"] });
+      qc.invalidateQueries({ queryKey: ["mqtt-sniff"] });
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+  const toggleMapping = async (m) => {
+    try {
+      await api.patch(`/admin/topic-mappings/${m.id}`, { enabled: !m.enabled });
+      qc.invalidateQueries({ queryKey: ["topic-mappings"] });
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+  const deleteMapping = async (m) => {
+    try {
+      await api.delete(`/admin/topic-mappings/${m.id}`);
+      toast.success("Mapeamento removido");
+      qc.invalidateQueries({ queryKey: ["topic-mappings"] });
+    } catch (e) { toast.error(formatApiError(e)); }
+  };
+  const prefillFromUnknown = (e) => {
+    // Try to extract device_id and var from topic like "/A100/TEMPERATURA" or "foo/A100/CMD"
+    const parts = e.topic.split("/").filter(Boolean);
+    let guessedDid = "";
+    let guessedVar = "TEMPERATURA";
+    if (parts.length >= 2) {
+      guessedDid = parts[0];
+      const varCandidate = parts.slice(1).join("/");
+      if (VAR_OPTIONS.includes(varCandidate)) guessedVar = varCandidate;
+    }
+    setMapForm({ topic: e.topic, target_device_id: guessedDid, target_var: guessedVar });
+    // scroll to form
+    document.getElementById("mapping-form")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
   return (
     <div className="space-y-4" data-testid="mqtt-diag">
       <Card className="p-4">
@@ -688,17 +740,106 @@ function MqttDiagTab() {
           <div className="font-display text-xs uppercase tracking-widest text-amber-400 mb-2">
             Mensagens fora do prefixo {summary.prefix} ({summary.unknown_sample.length} recentes)
           </div>
-          <div className="font-mono text-[11px] space-y-0.5 max-h-40 overflow-auto">
+          <div className="font-mono text-[11px] space-y-0.5 max-h-56 overflow-auto">
             {summary.unknown_sample.slice().reverse().map((e, i) => (
-              <div key={i} className="text-muted-foreground">
-                <span className="text-slate-500">{e.ts?.slice(11, 19)}</span>{" "}
-                <span className="text-amber-300">{e.topic}</span>{" "}
-                <span className="text-emerald-400">= {e.payload}</span>
+              <div key={i} className="flex items-center gap-2 py-0.5 border-b border-border/30 last:border-0">
+                <span className="text-slate-500 shrink-0 w-16">{e.ts?.slice(11, 19)}</span>
+                <span className="text-amber-300 flex-1 truncate">{e.topic}</span>
+                <span className="text-emerald-400 truncate max-w-[160px]">= {e.payload}</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 px-2 text-[10px]"
+                  onClick={() => prefillFromUnknown(e)}
+                  data-testid={`map-prefill-${i}`}
+                >
+                  <ArrowDownToLine className="w-3 h-3 mr-1" /> Mapear
+                </Button>
               </div>
             ))}
           </div>
         </Card>
       )}
+
+      {/* === Topic → Variable Mappings === */}
+      <Card className="p-4" id="mapping-form">
+        <div className="font-display text-sm uppercase tracking-widest flex items-center gap-2 mb-3">
+          <Link2 className="w-4 h-4 text-sky-400" />
+          Mapeamento Tópico → Variável ({mappings.length})
+        </div>
+        <div className="text-xs text-muted-foreground mb-3">
+          Use para firmwares que publicam fora do padrão <span className="font-mono">{summary?.prefix || "TJS"}/&lt;device_id&gt;/&lt;VAR&gt;</span>.
+          Ex.: um ESP32 que publica <span className="font-mono text-amber-300">/A100/TEMPERATURA</span> → mapeie para device_id <b>A100</b>, variável <b>TEMPERATURA</b>.
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_180px_120px] gap-2 items-end">
+          <div>
+            <Label className="text-[10px] font-mono uppercase tracking-widest">Tópico MQTT exato</Label>
+            <Input
+              data-testid="mapping-topic-input"
+              placeholder="/A100/TEMPERATURA"
+              value={mapForm.topic}
+              onChange={(e) => setMapForm((f) => ({ ...f, topic: e.target.value }))}
+            />
+          </div>
+          <div>
+            <Label className="text-[10px] font-mono uppercase tracking-widest">Fancoil / device_id destino</Label>
+            <Select value={mapForm.target_device_id} onValueChange={(v) => setMapForm((f) => ({ ...f, target_device_id: v }))}>
+              <SelectTrigger data-testid="mapping-did-select"><SelectValue placeholder="Selecione o fancoil" /></SelectTrigger>
+              <SelectContent>
+                {fancoilsList.filter((f) => f.active !== false).map((f) => (
+                  <SelectItem key={f.id} value={f.device_id} data-testid={`mapping-did-opt-${f.device_id}`}>
+                    {f.name} <span className="text-muted-foreground font-mono">({f.device_id})</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-[10px] font-mono uppercase tracking-widest">Variável interna</Label>
+            <Select value={mapForm.target_var} onValueChange={(v) => setMapForm((f) => ({ ...f, target_var: v }))}>
+              <SelectTrigger data-testid="mapping-var-select"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {VAR_OPTIONS.map((v) => <SelectItem key={v} value={v} data-testid={`mapping-var-opt-${v.replace("/","-")}`}>{v}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={addMapping} data-testid="mapping-add-button" className="h-10">
+            <Plus className="w-4 h-4 mr-1" /> Adicionar
+          </Button>
+        </div>
+
+        {mappings.length > 0 && (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-xs" data-testid="mappings-table">
+              <thead className="bg-muted/40 text-left">
+                <tr>
+                  <th className="p-2">Tópico MQTT</th>
+                  <th className="p-2">→ device_id</th>
+                  <th className="p-2">→ Variável</th>
+                  <th className="p-2">Ativo</th>
+                  <th className="p-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {mappings.map((m) => (
+                  <tr key={m.id} className="border-t border-border/60" data-testid={`mapping-row-${m.id}`}>
+                    <td className="p-2 font-mono text-amber-300">{m.topic}</td>
+                    <td className="p-2 font-mono font-bold">{m.target_device_id}</td>
+                    <td className="p-2 font-mono text-sky-300">{m.target_var}</td>
+                    <td className="p-2"><Switch checked={m.enabled} onCheckedChange={() => toggleMapping(m)} data-testid={`mapping-toggle-${m.id}`} /></td>
+                    <td className="p-2">
+                      <Button variant="ghost" size="sm" onClick={() => deleteMapping(m)} data-testid={`mapping-delete-${m.id}`}>
+                        <Trash2 className="w-4 h-4 text-rose-400" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
         <DialogContent className="max-w-3xl">
