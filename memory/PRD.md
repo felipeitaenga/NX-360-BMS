@@ -29,13 +29,23 @@ Aplicativo web em pt-BR para automação predial. Começou focado em HVAC (fanco
 ### Lighting + Hydraulics
 - "Em breve"; entidade dispositivo preparada no backend
 
-## Novidades (02/10/2026 — iteração 13+14+15)
-- **Comandos em massa** na tela `/ar-condicionado`: Forçar Todos / Ligar Todos / Desligar Todos / Voltar p/ Automático. Cada ação pede confirmação (AlertDialog) e pula dispositivos offline. Endpoint: `POST /api/fancoils/bulk-command`.
-- **Diagnóstico MQTT ao vivo** em `/admin → Diagnóstico MQTT`: tabela por device_id com todas as variáveis que cada ESP32 publica, horário da última mensagem e botão para ver o tráfego bruto. Buffer de 50 msgs/device. Endpoints: `GET /api/admin/mqtt/sniff` e `GET /api/admin/mqtt/sniff/{device_id}`.
-- **Fix do loop de desconexão** do broker: `client_id` passou a ser único por conexão (`pilares-backend-<uuid8>`) para não colidir com o supervisório/outros clientes. 70s sem desconectar nos testes.
-- **Causa raiz do "só CJ101 funcionava"** diagnosticada: firmware ESP32 publica STATUS/MODO/SETPOINT somente na mudança — o loop de desconexão fazia o backend perder esses eventos pontuais. Além disso, alguns ESP32s (CJ031/A100 inclusive) publicam fora do prefixo `TJS/` — agora visível na aba de diagnóstico.
-- **Fix crash "Maximum update depth exceeded"** na página de detalhe do fancoil: upgrade `recharts` 3.6.0 → 3.10.1 (bug conhecido no `useElementOffset` da 3.6) + `TelemetryContext.beepRef` para quebrar dep circular `beep → connect → WS reconnect`.
-- **Mapeamento Topic → Variável** (novo!): admin pode mapear qualquer tópico MQTT (ex. `/A100/TEMPERATURA`) para um `device_id` e variável interna, trazendo online fancoils com firmware fora do padrão sem precisar reflashar. CJ031 (A100) virou online após mapeamento. Endpoints CRUD: `GET/POST /api/admin/topic-mappings`, `PATCH/DELETE /api/admin/topic-mappings/{id}`. UI com formulário em Admin → Diagnóstico MQTT + botão "Mapear" nas mensagens fora do prefixo.
+## Novidades (02/10/2026 — iteração 13+14+15+16)
+- **Comandos em massa** na tela `/ar-condicionado`: Forçar Todos / Ligar Todos / Desligar Todos / Voltar p/ Automático.
+- **Diagnóstico MQTT ao vivo** em `/admin → Diagnóstico MQTT`.
+- **Fix do loop de desconexão** do broker: `client_id` único por conexão.
+- **Fix crash "Maximum update depth exceeded"** no detalhe (recharts 3.6→3.10 + beepRef).
+- **Mapeamento Topic → Variável**: resolve ESP32s fora do padrão (CJ031/A100 agora online).
+- **Módulo ILUMINAÇÃO** (novo!) — `/iluminacao`:
+  - Overview com cards por pavimento (miniatura da planta, X/Y acesos, badge offline, botões Ligar/Desligar tudo).
+  - Visualização por pavimento `/iluminacao/pavimento/:id` com planta baixa + pontos sobre a planta (x,y relativos 0..1 para funcionar em qualquer zoom/resolução), zoom (roda do mouse) + pan (arrastar) + "ajustar à tela".
+  - Pontos: amarelo com brilho (aceso) / cinza (apagado) / azul pulsando (aguardando) / contorno vermelho tracejado (offline, sem clique) / selo "A" quando modo AUTO.
+  - Clique = TOGGLE (publica SEM retained). Clique direito = painel lateral com Ligar/Desligar, switch AUTO/MANUAL, outros pontos do mesmo circuito e últimos 10 eventos.
+  - Lista lateral com busca + filtro todos/acesos/apagados; seletor rápido de pavimento.
+  - **Modo edição** (admin): paleta de 8 tipos de luminária arrastável, upload de planta (PNG/JPG/SVG/WEBP, 15MB), mover pontos arrastando, excluir, formulário com nome + controladora + circuito (1-16).
+  - **Controladoras** `/iluminacao/controladoras` (admin): descoberta automática de IDs publicando Lnn, cadastro manual, grid 4x4 de circuitos com rename, Ligar/Desligar todos, bloqueio de exclusão quando há pontos vinculados.
+  - MQTT: controladora de iluminação só é identificada se publicar Lnn (TEMPERATURA de fancoil é ignorada); comandos nunca com retained; timeout de 3s com reversão.
+  - Eventos retidos 90 dias (TTL Mongo).
+  - WS events novos: `lighting_telemetry`, `lighting_pending`, `lighting_pending_resolved`, `lighting_pending_timeout`.
 
 ## Credenciais
 Ver `/app/memory/test_credentials.md` (admin: felipejferreira@gmail.com / @Pilares1)
