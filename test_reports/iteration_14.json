@@ -1,0 +1,26 @@
+{
+  "summary": "Iteration 14 — Targeted retest of /ar-condicionado/{id} to confirm the 'Maximum update depth exceeded' crash fix (recharts 3.6.0 → 3.10.1 + TelemetryContext beepRef). Logged in as admin, opened CJ041 (6abe34775f994cb96b7b78e1, device id 41 — the device that was reproducing the crash in the user's report) and left it open ~30s while live MQTT telemetry streamed in; then opened CJ101 (6abe34775f994cb96b7b78ed, device 9FE4) for another ~30s. ZERO 'Maximum update depth exceeded' entries in console or pageerror listeners across the whole session. Recharts SVG mounts (.recharts-wrapper svg) and the HISTÓRICO section renders Y-axes (0-28 SP/Temp, 0-100 VAG). INDICADORES update live: CJ041 timestamp advanced 21:24:00 → 21:24:31 (31s of fresh telemetry at NORMAL/LIGAR/AUTOMÁTICO/LIGADO, 21.2°C, SP=18.0°C). CJ101 shows DESLIGAR/DESLIGADO, 18.1°C, SP=18.5°C, PRESSÃO=60.0%, COMUNICAÇÃO=ONLINE. WebSocket emits a 'closed before established' WARNING only once per navigation (4 total across 3 route changes), not a reconnect loop. Admin → Diagnóstico MQTT (admin-tab-diag) renders table of 27 device rows. Verified recharts 3.10.1 installed (node_modules/recharts/package.json). package.json declares '^3.9.2' — acceptable semver, resolves to 3.10.1.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_14.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "recharts upgrade 3.6.0 → 3.10.1 confirmed resolves the infinite setState loop that was triggered by high-frequency telemetry on device 41 (11 topics). No regressions observed in 60s of live stream.",
+    "TelemetryContext using beepRef instead of [beep] in useCallback deps breaks the circular rerender chain. LGTM.",
+    "The repeated 'WebSocket is closed before the connection is established' warning is cosmetic — it fires because the component unmounts (route change) before the open handshake completes. Not a reconnect loop (verified: only 1 warning per navigation, no periodic reconnects over the 30s hold)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only retest)", "frontend": "100% — all 8 request bullets pass"},
+  "test_credentials": "felipejferreira@gmail.com / @Pilares1 (works)",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iter14 confirms the 'Maximum update depth exceeded' crash on /ar-condicionado/{id} is FULLY RESOLVED. Verified with the exact device that reproduced it (CJ041 / device id 41, 11 topics/s). Recharts is now 3.10.1 at runtime. If a similar freeze is reported again, check: (a) `node_modules/recharts/package.json` version, (b) TelemetryContext useCallback deps, (c) WS reconnect cadence in DevTools → Network/WS (should be 1 connect per route, not a loop). CJ041 PRESSÃO is '--' because firmware never published 041 PRESSAO/SET; CJ101 publishes it so it shows 60.0%.",
+  "rca of the issue": "User reported 'Maximum update depth exceeded' on FancoilDetail. RCA: (1) recharts 3.6.0 had a known internal setState loop triggered by rapid data updates (fixed in 3.9+). (2) TelemetryContext useCallback had `beep` in its deps array, so every state update that re-created `beep` invalidated the callback, which cascaded through subscriber effects. Fix: upgraded recharts to 3.10.1 and switched to `beepRef.current` with empty deps. Retest with the specific flooder device (id 41, CJ041) and a second active device (CJ101, 9FE4) for 30s each shows zero recursion errors, chart renders, telemetry updates. Mitigation: already applied."
+}
