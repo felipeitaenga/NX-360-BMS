@@ -23,3 +23,17 @@ async def ensure_indexes():
     await db.password_reset_requests.create_index("created_at", expireAfterSeconds=900)
     await db.schedules.create_index("fancoil_id")
     await db.device_states.create_index("device_id", unique=True)
+    # Lighting module
+    await db.pavimentos.create_index("nome", unique=True)
+    await db.pavimentos.create_index("ordem")
+    await db.lighting_controllers.create_index("mqtt_id", unique=True)
+    await db.lighting_points.create_index("pavimento_id")
+    await db.lighting_points.create_index("controladora_id")
+    await db.lighting_states.create_index("mqtt_id", unique=True)
+    await db.lighting_events.create_index([("timestamp", -1)])
+    await db.lighting_events.create_index([("mqtt_id", 1), ("timestamp", -1)])
+    # TTL 90 days = 7776000s
+    try:
+        await db.lighting_events.create_index("timestamp", expireAfterSeconds=7776000)
+    except Exception:
+        pass

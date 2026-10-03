@@ -18,6 +18,9 @@ import Relatorios from "./pages/Relatorios";
 import Admin from "./pages/Admin";
 import EmBreve from "./pages/EmBreve";
 import MapaCalor from "./pages/MapaCalor";
+import Iluminacao from "./pages/Iluminacao";
+import IluminacaoPavimento from "./pages/IluminacaoPavimento";
+import IluminacaoControladoras from "./pages/IluminacaoControladoras";
 import { Lightbulb, Droplets, Loader2 } from "lucide-react";
 
 function Protected({ children, admin }) {
@@ -58,7 +61,9 @@ function App() {
                 <Route path="/mapa-calor" element={<Protected><Shell><MapaCalor /></Shell></Protected>} />
                 <Route path="/alarmes" element={<Protected><Shell><Alarmes /></Shell></Protected>} />
                 <Route path="/relatorios" element={<Protected><Shell><Relatorios /></Shell></Protected>} />
-                <Route path="/iluminacao" element={<Protected><Shell><EmBreve title="Iluminação" icon={Lightbulb} /></Shell></Protected>} />
+                <Route path="/iluminacao" element={<Protected><Shell><Iluminacao /></Shell></Protected>} />
+                <Route path="/iluminacao/controladoras" element={<Protected admin><Shell><IluminacaoControladoras /></Shell></Protected>} />
+                <Route path="/iluminacao/pavimento/:id" element={<Protected><Shell><IluminacaoPavimento /></Shell></Protected>} />
                 <Route path="/hidraulica" element={<Protected><Shell><EmBreve title="Hidráulica" icon={Droplets} /></Shell></Protected>} />
                 <Route path="/admin" element={<Protected admin><Shell><Admin /></Shell></Protected>} />
                 <Route path="*" element={<Navigate to="/" replace />} />

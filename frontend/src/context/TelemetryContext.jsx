@@ -8,6 +8,8 @@ export const useTelemetry = () => useContext(TelemetryContext);
 export function TelemetryProvider({ children }) {
   const [states, setStates] = useState({});
   const [alarmsBump, setAlarmsBump] = useState(0);
+  const [lightingState, setLightingState] = useState({}); // {mqtt_id: {online,rede,ultimo_contato,circuitos:{1..16:{estado,modo,last_input}}}}
+  const [pending, setPending] = useState({}); // "{mqtt_id}:{kind}:{circuito}" -> {timeout?: msg}
   const wsRef = useRef(null);
   const { beep } = useSound();
   const beepRef = useRef(beep);
@@ -31,6 +33,45 @@ export function TelemetryProvider({ children }) {
             beepRef.current?.(msg.data?.priority || "alta");
           } else if (msg.event === "alarm_cleared" || msg.event === "alarm_ack") {
             setAlarmsBump((n) => n + 1);
+          } else if (msg.event === "lighting_telemetry") {
+            const { mqtt_id, circuito, estado, modo, last_input, online, rede } = msg.data || {};
+            if (!mqtt_id) return;
+            setLightingState((prev) => {
+              const c = prev[mqtt_id] ? { ...prev[mqtt_id] } : { mqtt_id, online: false, rede: null, ultimo_contato: null, circuitos: {} };
+              c.circuitos = { ...(c.circuitos || {}) };
+              if (circuito != null) {
+                const cur = c.circuitos[circuito] || { estado: null, modo: null, last_input: null };
+                c.circuitos[circuito] = {
+                  estado: estado !== undefined ? estado : cur.estado,
+                  modo: modo !== undefined ? modo : cur.modo,
+                  last_input: last_input !== undefined ? last_input : cur.last_input,
+                };
+              }
+              if (online !== undefined) c.online = online;
+              if (rede !== undefined) c.rede = rede;
+              c.ultimo_contato = new Date().toISOString();
+              return { ...prev, [mqtt_id]: c };
+            });
+          } else if (msg.event === "lighting_pending") {
+            const { mqtt_id, circuito, kind } = msg.data || {};
+            setPending((p) => ({ ...p, [`${mqtt_id}:${kind}:${circuito}`]: { ts: Date.now() } }));
+          } else if (msg.event === "lighting_pending_resolved") {
+            const { mqtt_id, circuito, kind } = msg.data || {};
+            setPending((p) => {
+              const n = { ...p };
+              delete n[`${mqtt_id}:${kind}:${circuito}`];
+              return n;
+            });
+          } else if (msg.event === "lighting_pending_timeout") {
+            const { mqtt_id, circuito, kind } = msg.data || {};
+            setPending((p) => ({ ...p, [`${mqtt_id}:${kind}:${circuito}`]: { ts: Date.now(), timeout: true } }));
+            setTimeout(() => {
+              setPending((p) => {
+                const n = { ...p };
+                delete n[`${mqtt_id}:${kind}:${circuito}`];
+                return n;
+              });
+            }, 2500);
           }
         } catch {}
       };
@@ -47,7 +88,7 @@ export function TelemetryProvider({ children }) {
   }, [connect]);
 
   return (
-    <TelemetryContext.Provider value={{ states, alarmsBump }}>
+    <TelemetryContext.Provider value={{ states, alarmsBump, lightingState, setLightingState, lightingPending: pending }}>
       {children}
     </TelemetryContext.Provider>
   );

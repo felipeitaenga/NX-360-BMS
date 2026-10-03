@@ -387,6 +387,16 @@ class MQTTService:
             return
         device_id = parts[1]
         var = "/".join(parts[2:])
+        # 3) Delegate to lighting service if the sub-topic matches lighting pattern
+        try:
+            from lighting_service import lighting_svc
+            if lighting_svc.is_lighting_subtopic(var) or device_id in lighting_svc.lighting_ids:
+                handled = await lighting_svc.handle(device_id, var, payload)
+                if handled:
+                    return
+        except Exception:
+            logger.exception("lighting handler error")
+        # 4) Fancoil pipeline
         await self._apply_update(device_id, var, payload)
 
     async def reload_mappings(self):
