@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 15 — Full regression on the new Topic→Variable Mapping feature (admin). Backend: 8 pytest tests on /api/admin/topic-mappings covering list (sorted asc by topic), create, duplicate rejection (400), viewer forbidden (403), PATCH toggle + target_var change, DELETE (and re-delete 404), end-to-end routing verification (sniff /A100 shows events with var=TEMPERATURA and mapped_from=/A100/TEMPERATURA within 60s), and CJ031/A100 fancoil online with temperature set from mapped topic. 8/8 passed. Frontend: logged in with felipejferreira@gmail.com/@Pilares1, opened Admin → Diagnóstico MQTT. Verified all four data-testids on the mapping form (mapping-topic-input, mapping-did-select, mapping-var-select, mapping-add-button). Fancoil select is populated by the active-fancoil list (15 options). Created a unique mapping /TESTE_UI_RETEST15/HELLO → CE94 TEMPERATURA via UI (toast 'Mapeamento criado' shown, row appeared in mappings-table). Toggled enabled off (data-state checked→unchecked) and then deleted the row (toast 'Mapeamento removido', row gone, 2 preexisting rows preserved). Confirmed the 'Mapear' prefill button in a /SISTEMA/… row (data-testid map-prefill-0) fills mapping-topic-input with the raw topic ('/SISTEMA/LED') and scrolls to the form. The existing production mappings (/A100/TEMPERATURA, /A100/VAG) remain in the table with enabled=true. Routing path is working end-to-end: A100 ESP32 publishing /A100/TEMPERATURA and /A100/VAG without the TJS prefix is correctly reinterpreted as device A100 TEMPERATURA/VAG and the fancoil CJ031 is online with temperature=22.1°C and VAG=90.2 visible in sniff.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter15_topic_mappings.py",
+    "/app/test_reports/pytest/iter15.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes.py uses `req.dict(exclude_unset=True)` on PATCH — Pydantic v2 deprecates .dict() in favor of .model_dump(). Works but will warn.",
+    "The duplicate check in create_topic_mapping is case-sensitive and whitespace-trimmed only on topic (not target_device_id). This is fine but worth documenting.",
+    "No unique index on db.topic_mappings.topic — concurrent POSTs can race past the duplicate check. Consider adding an index: topic unique.",
+    "reload_mappings() only loads enabled!=False entries into the service's in-memory dict. This is correct behavior and matches the toggle semantics — disabling via PATCH removes it from routing after reload."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter15_topic_mappings.py"
+  ],
+  "success_rate": {"backend": "100% (8/8 pass)", "frontend": "100% (all UI checks pass)"},
+  "test_credentials": "admin felipejferreira@gmail.com / @Pilares1 (verified working)",
+  "seed_data_creation": "Test created and cleaned up: topic mapping /TESTE_RETEST15/XYZ (CRUD) and /TESTE_UI_RETEST15/HELLO (UI); viewer user TEST_viewer_iter15@example.com was created for 403 testing (not deleted — low risk, prefixed TEST_).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Topic→Variable mapping feature is production-ready. The two prod mappings (/A100/TEMPERATURA, /A100/VAG → A100) persist in db.topic_mappings and route CJ031 traffic correctly. If any future test needs to validate routing, use GET /api/admin/mqtt/sniff/A100 and look for events with ev['mapped_from']==topic. If creating viewer accounts for 403 tests, POST /api/users (NOT /api/admin/users).",
+  "rca of the issue": "N/A — feature test, not a bug fix."
+}
