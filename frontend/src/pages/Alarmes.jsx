@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, formatApiError } from "../lib/api";
 import { useTelemetry } from "../context/TelemetryContext";
@@ -24,6 +24,15 @@ export default function Alarmes() {
       (await api.get(`/alarms${onlyActive ? "?active_only=true" : ""}`)).data,
     refetchInterval: 10000,
   });
+  const { data: fancoils = [] } = useQuery({
+    queryKey: ["fancoils"],
+    queryFn: async () => (await api.get("/fancoils")).data,
+  });
+  const nameByDevice = useMemo(() => {
+    const m = {};
+    fancoils.forEach((f) => { m[f.device_id] = f.name; });
+    return m;
+  }, [fancoils]);
 
   const ack = async (id) => {
     try {
@@ -58,7 +67,7 @@ export default function Alarmes() {
             <thead className="bg-muted/40">
               <tr className="text-left">
                 <th className="px-4 py-3 font-mono uppercase text-xs tracking-wider">Prioridade</th>
-                <th className="px-4 py-3 font-mono uppercase text-xs tracking-wider">Dispositivo</th>
+                <th className="px-4 py-3 font-mono uppercase text-xs tracking-wider">Conjunto</th>
                 <th className="px-4 py-3 font-mono uppercase text-xs tracking-wider">Tipo</th>
                 <th className="px-4 py-3 font-mono uppercase text-xs tracking-wider">Início</th>
                 <th className="px-4 py-3 font-mono uppercase text-xs tracking-wider">Fim</th>
@@ -81,7 +90,10 @@ export default function Alarmes() {
                       {a.priority}
                     </span>
                   </td>
-                  <td className="px-4 py-3 font-mono">{a.device_id}</td>
+                  <td className="px-4 py-3">
+                    <span className="font-display font-bold">{nameByDevice[a.device_id] || a.device_id}</span>
+                    <span className="ml-2 text-[10px] font-mono text-muted-foreground">{a.device_id}</span>
+                  </td>
                   <td className="px-4 py-3">{a.label}</td>
                   <td className="px-4 py-3 text-xs font-mono">{new Date(a.started_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</td>
                   <td className="px-4 py-3 text-xs font-mono">{a.cleared_at ? new Date(a.cleared_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</td>
