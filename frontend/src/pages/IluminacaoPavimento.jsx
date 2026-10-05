@@ -339,7 +339,7 @@ function PontoDot({ p, state, pending, selected, canCommand, editMode, onClick, 
     <div
       data-ponto-id={p.id}
       data-testid={`ponto-${p.id}`}
-      className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full ${color} w-6 h-6 flex items-center justify-center text-[10px] cursor-pointer transition-all ${selected ? "ring-2 ring-sky-300 ring-offset-2 ring-offset-slate-900" : ""} ${offline ? "pointer-events-none opacity-70" : ""}`}
+      className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full ${color} w-10 h-10 flex items-center justify-center text-lg cursor-pointer transition-all ${selected ? "ring-2 ring-sky-300 ring-offset-2 ring-offset-slate-900" : ""} ${offline ? "pointer-events-none opacity-70" : ""}`}
       style={{ left, top, touchAction: "none" }}
       onClick={(e) => { e.stopPropagation(); if (!dragging) { onSelect(); if (!editMode && canCommand && !offline) onClick(); } }}
       onContextMenu={(e) => { e.preventDefault(); onRightClick(); }}
@@ -348,11 +348,11 @@ function PontoDot({ p, state, pending, selected, canCommand, editMode, onClick, 
     >
       <span className="pointer-events-none">{tipoEmoji}</span>
       {state.modo === true && (
-        <span className="absolute -top-2 -right-2 bg-sky-500 text-white text-[8px] font-black rounded-full w-4 h-4 flex items-center justify-center">A</span>
+        <span className="absolute -top-1 -right-1 bg-sky-500 text-white text-[9px] font-black rounded-full w-5 h-5 flex items-center justify-center">A</span>
       )}
       {editMode && (
-        <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="absolute -bottom-2 -right-2 bg-rose-500 text-white text-[8px] rounded-full w-4 h-4 flex items-center justify-center" data-testid={`delete-ponto-${p.id}`}>
-          <X className="w-2.5 h-2.5" />
+        <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="absolute -bottom-1 -right-1 bg-rose-500 text-white rounded-full w-5 h-5 flex items-center justify-center" data-testid={`delete-ponto-${p.id}`}>
+          <X className="w-3 h-3" />
         </button>
       )}
     </div>
