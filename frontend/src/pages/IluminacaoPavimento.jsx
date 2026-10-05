@@ -137,13 +137,13 @@ export default function IluminacaoPavimento() {
     return !!lightingPending[`${ctrl.mqtt_id}:estado:${p.circuito}`];
   };
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const filteredList = useMemo(() => pontos.filter((p) => {
     if (search && !p.nome.toLowerCase().includes(search.toLowerCase())) return false;
     const { estado } = getPointState(p);
     if (filter === "acesos" && estado !== true) return false;
     if (filter === "apagados" && estado === true) return false;
     return true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [pontos, search, filter, lightingState, ctrlById]);
 
   if (!pav) return <div className="p-8">Pavimento não encontrado</div>;
