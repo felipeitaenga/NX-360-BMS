@@ -41,6 +41,11 @@ app.include_router(lighting_router)
 app.include_router(pwd_router)
 
 
+@app.get("/api/health")
+async def health():
+    return {"status": "ok", "mqtt_connected": svc.connected}
+
+
 @app.on_event("startup")
 async def _startup():
     await ensure_indexes()
