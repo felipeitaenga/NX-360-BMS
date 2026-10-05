@@ -307,17 +307,18 @@ function PontoDot({ p, state, pending, selected, canCommand, editMode, onClick, 
   const onMouseDown = (e) => {
     if (!editMode) return;
     e.stopPropagation();
+    const el = e.currentTarget;  // Capturar o DOM node — e.currentTarget vira null fora do handler
     const start = { x: e.clientX, y: e.clientY };
-    const container = e.currentTarget.parentElement;
+    const container = el.parentElement;
     const rect = container.getBoundingClientRect();
     let moved = false;
     const move = (ev) => {
       if (Math.abs(ev.clientX - start.x) + Math.abs(ev.clientY - start.y) > 3) moved = true;
-      if (moved) {
+      if (moved && el) {
         const nx = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
         const ny = Math.max(0, Math.min(1, (ev.clientY - rect.top) / rect.height));
-        e.currentTarget.style.left = `${nx * 100}%`;
-        e.currentTarget.style.top = `${ny * 100}%`;
+        el.style.left = `${nx * 100}%`;
+        el.style.top = `${ny * 100}%`;
         setDragging(true);
       }
     };
