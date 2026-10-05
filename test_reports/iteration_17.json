@@ -1,0 +1,31 @@
+{
+  "summary": "Validação completa do fix de zip-slip / path-traversal em POST /api/admin/restore. Criado /app/backend/tests/test_restore_zipslip.py com 12 testes cobrindo (a) 7 vetores de ataque distintos num único tar.gz malicioso + symlinks, (b) backup/restore legítimos, (c) auth guard (anon + viewer 403), (d) rejeição de tarballs inválidos, (e) estrutura exata de /app/deploy/. Resultado: 12/12 PASSED. Nenhum arquivo malicioso foi criado fora de UPLOADS_DIR; os 7 members hostis geraram WARNING 'restore: ignorando membro suspeito' / 'aponta para fora de UPLOADS_DIR' no log; os 2 arquivos legítimos foram restaurados corretamente (files_restored=2).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_restore_zipslip.py",
+    "/app/test_reports/pytest/zipslip_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix em routes.py:796-818 está sólido: combina 3 camadas (startswith('/'), '..' em Path.parts, e target.resolve().relative_to(uploads_root)). Symlinks são filtrados automaticamente pelo guard `member.isfile()`.",
+    "Sugestão (não bloqueante): usar `tarfile.data_filter` (Python 3.12+) ou `extraction_filter` como defesa em profundidade extra; e logar também o `linkname` em caso de symlink hostil pra auditoria."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_restore_zipslip.py (novo)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "n/a (backend only)"},
+  "test_credentials": "admin: felipejferreira@gmail.com / @Pilares1; viewer de teste: TEST_viewer_zipslip@example.com / ViewerPass123! (ou ViewerPass123!x se already-changed)",
+  "seed_data_creation": "Criado usuário viewer TEST_viewer_zipslip@example.com para teste de 403. Dois arquivos legítimos restaurados em /app/backend/uploads/plantas/only_safe.txt, /app/backend/uploads/plantas/safe.txt e /app/backend/uploads/nested/dir/legit2.txt.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reutilizar test_restore_zipslip.py como regressão. Vetores testados: 'uploads/../../../tmp/x', '/tmp/x' (absoluto), 'uploads/./../../tmp/x', 'uploads/..', '../uploads/evil.txt', 'uploads/sub/../../pwned.txt', unicode '..', 2 symlinks (/tmp absoluto e relativo). Também validado que /app/deploy/ tem exatamente os 6 arquivos esperados — não mexer.",
+  "rca of the issue": "Antes do fix, um tar.gz malicioso podia escrever arquivos arbitrários no FS do backend (ex.: /tmp/pwned.txt, /etc/..., arquivos sobrescrevendo config). O fix validou 3 condições cumulativas: (1) rejeitar member.name começando com '/' ou contendo '..' em Path.parts; (2) resolver target absoluto; (3) exigir que resolved.relative_to(UPLOADS_DIR.resolve()) não lance ValueError. Testes confirmam que todos os 7 vetores + 2 symlinks são barrados e nenhum arquivo escapa de /app/backend/uploads."
+}

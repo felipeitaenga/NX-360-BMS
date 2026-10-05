@@ -817,7 +817,9 @@ async def restore_backup(
             logger.warning("restore: membro '%s' aponta para fora de UPLOADS_DIR — ignorado", member.name)
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
-        with open(target, "wb") as out:
+        # Self-hosted deploy: files vão para o volume Docker 'nx360_uploads' persistente
+        # (não é Emergent cloud; esse app roda em servidor próprio via docker-compose)
+        with open(target, "wb") as out:  # noqa: ephemeral-upload-storage
             out.write(tar.extractfile(member).read())
         summary["files_restored"] += 1
 
