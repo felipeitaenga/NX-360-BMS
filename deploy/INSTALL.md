@@ -91,7 +91,7 @@ Abra `http://SEU_IP:8090/` no navegador.
 
 ## 🔑 Primeiro login
 
-- Usuário: `admin@pilares.local`
+- Usuário: `admin@pilares.com.br`
 - Senha: `Admin@123` — **o sistema vai forçar troca no primeiro login**
 
 Depois crie seus usuários em **Admin → Usuários**.

@@ -793,16 +793,33 @@ async def restore_backup(
                 skipped += 1  # duplicate _id ou outro erro
         summary["collections"][name] = {"inserted": inserted, "skipped": skipped}
 
-    # Restaurar arquivos de upload
+    # Restaurar arquivos de upload (com proteção contra path traversal / zip-slip)
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    uploads_root = UPLOADS_DIR.resolve()
     for member in tar.getmembers():
-        if member.isfile() and member.name.startswith("uploads/"):
-            rel = Path(member.name).relative_to("uploads")
-            target = UPLOADS_DIR / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with open(target, "wb") as out:
-                out.write(tar.extractfile(member).read())
-            summary["files_restored"] += 1
+        if not (member.isfile() and member.name.startswith("uploads/")):
+            continue
+        # Ignora caminhos absolutos ou com ".."
+        if member.name.startswith("/") or ".." in Path(member.name).parts:
+            logger.warning("restore: ignorando membro suspeito '%s'", member.name)
+            continue
+        rel = Path(member.name).relative_to("uploads")
+        target = (UPLOADS_DIR / rel)
+        # Valida que o caminho final resolvido fica dentro de UPLOADS_DIR
+        try:
+            resolved = target.resolve()
+        except Exception:
+            logger.warning("restore: não resolveu caminho de '%s'", member.name)
+            continue
+        try:
+            resolved.relative_to(uploads_root)
+        except ValueError:
+            logger.warning("restore: membro '%s' aponta para fora de UPLOADS_DIR — ignorado", member.name)
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with open(target, "wb") as out:
+            out.write(tar.extractfile(member).read())
+        summary["files_restored"] += 1
 
     tar.close()
     # Reload runtime caches

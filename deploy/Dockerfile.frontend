@@ -12,11 +12,19 @@ ARG REACT_APP_BACKEND_URL
 ENV REACT_APP_BACKEND_URL=$REACT_APP_BACKEND_URL
 
 # Dependências primeiro (cache de layer)
-COPY frontend/package.json frontend/yarn.lock /app/
-RUN yarn install --frozen-lockfile
+# yarn.lock é opcional (o export do Emergent não inclui)
+COPY frontend/package.json frontend/yarn.lock* /app/
+# Remove plugins de dev do Emergent (só usados no preview; baixados de CDN privada)
+RUN node -e "const f='package.json',p=require('./'+f);for(const k of Object.keys(p.devDependencies||{}))if(k.startsWith('@emergentbase/'))delete p.devDependencies[k];require('fs').writeFileSync(f,JSON.stringify(p,null,2))"
+RUN if [ -f yarn.lock ]; then yarn install --frozen-lockfile --network-timeout 600000; \
+    else yarn install --network-timeout 600000; fi
 
 # Código e build
 COPY frontend /app
+# Garante que nenhum .env do preview do Emergent sobrescreva a URL do servidor
+RUN rm -f /app/.env /app/.env.local /app/.env.production \
+    && printf "REACT_APP_BACKEND_URL=%s\nGENERATE_SOURCEMAP=false\n" "$REACT_APP_BACKEND_URL" > /app/.env
+ENV NODE_OPTIONS=--max-old-space-size=1536
 RUN yarn build
 
 # ---------- 2) Nginx ----------

@@ -1,4 +1,4 @@
-version: "3.9"
+name: nx360
 
 # NX-360 BMS — stack completo (MongoDB + backend FastAPI + frontend React + gateway Nginx)
 # Acesso público: http://SEU_IP:${PUBLIC_PORT}/
@@ -37,6 +37,9 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       MQTT_TOPIC_PREFIX: ${MQTT_TOPIC_PREFIX:-TJS}
       CORS_ORIGINS: ${CORS_ORIGINS}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@pilares.com.br}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@123}
+      FRONTEND_URL: ${REACT_APP_BACKEND_URL}
     volumes:
       - nx360_uploads:/app/uploads
     networks: [nx360]
@@ -65,8 +68,11 @@ services:
 
 volumes:
   nx360_mongo_data:
+    name: nx360_mongo_data
   nx360_uploads:
+    name: nx360_uploads
 
 networks:
   nx360:
+    name: nx360_nx360
     driver: bridge

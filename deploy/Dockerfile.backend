@@ -14,7 +14,9 @@ RUN apt-get update \
 
 # Instala dependências Python
 COPY backend/requirements.txt /app/requirements.txt
-RUN pip install --upgrade pip && pip install -r /app/requirements.txt
+# Remove pacotes internos do Emergent (não usados pelo código e indisponíveis fora da plataforma)
+RUN grep -viE '^(emergentintegrations|litellm)' /app/requirements.txt > /app/req-docker.txt \
+    && pip install --upgrade pip && pip install -r /app/req-docker.txt
 
 # Copia o código do backend
 COPY backend /app

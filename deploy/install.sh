@@ -14,9 +14,13 @@ err() { echo -e "\033[1;31m[ERRO] $1\033[0m" >&2; exit 1; }
 
 # ---------- 1) Checagem de pré-requisitos ----------
 say "Checando pré-requisitos…"
-command -v docker >/dev/null 2>&1 || err "Docker não instalado. Instale com: curl -fsSL https://get.docker.com | sh"
-docker compose version >/dev/null 2>&1 || err "Docker Compose v2 não instalado. Rode: apt install docker-compose-plugin"
-command -v openssl >/dev/null 2>&1 || err "openssl não encontrado. apt install openssl"
+if ! command -v docker >/dev/null 2>&1; then
+  say "Docker não encontrado — instalando…"
+  curl -fsSL https://get.docker.com | sh
+fi
+systemctl enable --now docker >/dev/null 2>&1 || true
+docker compose version >/dev/null 2>&1 || apt-get install -y docker-compose-plugin
+command -v openssl >/dev/null 2>&1 || apt-get install -y openssl
 
 # ---------- 2) Detectar IP público ----------
 say "Detectando IP público do servidor…"
@@ -31,8 +35,10 @@ echo "   IP detectado: $PUBLIC_IP"
 
 # ---------- 3) Perguntar a porta ----------
 DEFAULT_PORT=8090
-read -rp "Porta pública (ENTER para padrão $DEFAULT_PORT): " PUBLIC_PORT_IN
-PUBLIC_PORT="${PUBLIC_PORT_IN:-$DEFAULT_PORT}"
+if [[ -z "${PUBLIC_PORT:-}" ]]; then
+  read -rp "Porta pública (ENTER para padrão $DEFAULT_PORT): " PUBLIC_PORT_IN
+  PUBLIC_PORT="${PUBLIC_PORT_IN:-$DEFAULT_PORT}"
+fi
 
 # Checar se porta está livre
 if ss -tnl 2>/dev/null | grep -q ":$PUBLIC_PORT "; then
@@ -57,6 +63,8 @@ DB_NAME=nx360bms
 JWT_SECRET=$JWT_SECRET
 CORS_ORIGINS=*
 MQTT_TOPIC_PREFIX=TJS
+ADMIN_EMAIL=admin@pilares.com.br
+ADMIN_PASSWORD=Admin@123
 REACT_APP_BACKEND_URL=http://$PUBLIC_IP:$PUBLIC_PORT
 EOF
   echo "   .env salvo. (Guarde a MONGO_PASSWORD em local seguro — ela está em $SCRIPT_DIR/.env)"
@@ -78,13 +86,13 @@ docker compose --env-file .env up -d
 
 # ---------- 7) Aguardar saúde ----------
 say "Aguardando o backend ficar pronto…"
-for i in {1..40}; do
+for i in {1..60}; do
   if curl -fs "http://127.0.0.1:$PUBLIC_PORT/api/health" >/dev/null 2>&1; then
     echo "   Backend OK."
     break
   fi
   sleep 2
-  [[ $i -eq 40 ]] && { docker compose logs --tail=50 backend; err "Backend não respondeu em 80s"; }
+  [[ $i -eq 60 ]] && { docker compose logs --tail=50 backend; err "Backend não respondeu em 120s"; }
 done
 
 # ---------- 8) Final ----------
@@ -94,7 +102,7 @@ cat <<EOF
 ║  NX-360 BMS instalado com sucesso                            ║
 ╠══════════════════════════════════════════════════════════════╣
 ║  URL de acesso:  http://$PUBLIC_IP:$PUBLIC_PORT/
-║  Login inicial:  admin@pilares.local  /  Admin@123
+║  Login inicial:  admin@pilares.com.br  /  Admin@123
 ║                  (o sistema vai pedir pra trocar a senha)
 ╠══════════════════════════════════════════════════════════════╣
 ║  Comandos úteis:                                             ║
