@@ -233,10 +233,17 @@ class LightingService:
         if not c["online"]:
             raise ValueError("Controladora offline")
         prev = c["circuitos"][circuito]["estado"]
+        # Compute desired state for idempotency check (TOGGLE sempre fica pending)
+        v = value.strip().lower()
+        desired = True if v in ("true", "1", "on") else (False if v in ("false", "0", "off") else None)
+        idempotent = desired is not None and prev == desired
+        # 1) Mark as pending FIRST so firmware echo (that pode chegar em <50ms) sempre resolve
+        if not idempotent:
+            await self._set_pending(mqtt_id, "estado", circuito, prev)
+        # 2) Agora publica (SEM retained)
         self._publish(topic, value)
         await self._log_event(mqtt_id, circuito, "comando", value, "app", user_id)
-        await self._set_pending(mqtt_id, "estado", circuito, prev)
-        return {"topic": topic, "value": value, "retain": False}
+        return {"topic": topic, "value": value, "retain": False, "pending": not idempotent}
 
     async def send_mode_command(self, mqtt_id: str, circuito: int, mode: str, user_id: str = None) -> dict:
         prefix = self._mqtt_svc.topic_prefix if self._mqtt_svc else "TJS"
@@ -246,10 +253,13 @@ class LightingService:
             raise ValueError("Controladora offline")
         prev = c["circuitos"][circuito]["modo"]
         v = "AUTO" if mode.upper() in ("AUTO", "TRUE", "1") else "MANUAL"
+        desired_bool = v == "AUTO"
+        idempotent = prev == desired_bool
+        if not idempotent:
+            await self._set_pending(mqtt_id, "modo", circuito, prev)
         self._publish(topic, v)
         await self._log_event(mqtt_id, circuito, "cmd_modo", v, "app", user_id)
-        await self._set_pending(mqtt_id, "modo", circuito, prev)
-        return {"topic": topic, "value": v, "retain": False}
+        return {"topic": topic, "value": v, "retain": False, "pending": not idempotent}
 
     async def send_all_command(self, mqtt_id: str, on: bool, user_id: str = None) -> dict:
         prefix = self._mqtt_svc.topic_prefix if self._mqtt_svc else "TJS"
