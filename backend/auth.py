@@ -98,3 +98,29 @@ async def allowed_fancoil_ids(user: dict) -> list[str] | None:
         return None
     perms = await get_user_permissions(user["id"])
     return perms["fancoil_ids"]
+
+
+async def allowed_modules(user: dict) -> list[str] | None:
+    """Return None for admin (all), or list of allowed module names."""
+    if user["role"] == "admin":
+        return None
+    perms = await get_user_permissions(user["id"])
+    modules = perms.get("modules", []) or []
+    # Legado: se o admin não setou módulos mas setou fancoils, assume só HVAC
+    if not modules and perms.get("fancoil_ids"):
+        modules = ["ar_condicionado"]
+    return modules
+
+
+def require_module(module: str):
+    """Dependency factory: 403 se o usuário não tem acesso ao módulo."""
+    async def check(user: dict = Depends(get_current_user)):
+        if user["role"] == "admin":
+            return user
+        mods = await allowed_modules(user)
+        if mods is None:
+            return user
+        if module not in mods:
+            raise HTTPException(status_code=403, detail=f"Sem permissão para o módulo '{module}'")
+        return user
+    return check

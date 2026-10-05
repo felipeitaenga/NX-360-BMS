@@ -23,10 +23,18 @@ const ITEMS = [
 ];
 
 function moduleAllowed(user, perms, item) {
-  if (item.adminOnly) return user.role === "admin";
-  if (user.role === "admin") return true;
-  if (!perms?.modules?.length) return true; // default to allow if not restricted
-  return perms.modules.includes(item.module);
+  if (item.adminOnly) return user?.role === "admin";
+  if (user?.role === "admin") return true;
+  // Sempre mostra o Início
+  if (item.module === "home") return true;
+  // Se o admin cadastrou módulos explicitamente → whitelist estrita
+  if (perms?.modules?.length) return perms.modules.includes(item.module);
+  // Se o usuário tem permissão de fancoil específica → só vê módulos HVAC
+  if (perms?.fancoil_ids?.length) {
+    return ["ar_condicionado", "alarmes"].includes(item.module);
+  }
+  // Sem permissões cadastradas = acesso restrito ao Início só
+  return false;
 }
 
 export default function AppShell({ children }) {

@@ -63,7 +63,7 @@ export default function Iluminacao() {
           <div className="text-muted-foreground text-sm mt-1">Supervisão por pavimento</div>
         </div>
         <div className="flex gap-2">
-          {isAdmin && (
+          {user?.role === "admin" && (
             <>
               <Button variant="outline" asChild data-testid="btn-controladoras">
                 <Link to="/iluminacao/controladoras"><Settings2 className="w-4 h-4 mr-2" />Controladoras</Link>

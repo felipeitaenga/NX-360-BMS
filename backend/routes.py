@@ -204,8 +204,6 @@ async def list_fancoils(user: dict = Depends(get_current_user)):
     allowed = await allowed_fancoil_ids(user)
     cursor = db.fancoils.find({})
     result = []
-    settings = await db.settings.find_one({"_id": "global"}) or {}
-    hide = settings.get("hide_unauthorized_fancoils", False)
     async for fc in cursor:
         fid = str(fc["_id"])
         out = _fancoil_out(fc)
@@ -213,10 +211,10 @@ async def list_fancoils(user: dict = Depends(get_current_user)):
             out["authorized"] = True
             result.append(out)
         else:
-            authorized = fid in allowed
-            if hide and not authorized:
+            # Esconde não autorizados por padrão (segurança por default)
+            if fid not in allowed:
                 continue
-            out["authorized"] = authorized
+            out["authorized"] = True
             result.append(out)
     return result
 

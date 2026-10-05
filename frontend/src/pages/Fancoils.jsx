@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, formatApiError } from "../lib/api";
+import { useAuth } from "../context/AuthContext";
 import { useTelemetry } from "../context/TelemetryContext";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
@@ -112,6 +113,7 @@ function FancoilItem({ fc, state, hasAlarm, side }) {
 export default function Fancoils() {
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(null);
+  const { user } = useAuth();
   const { states } = useTelemetry();
   const { data: fancoils = [] } = useQuery({
     queryKey: ["fancoils"],
@@ -198,7 +200,8 @@ export default function Fancoils() {
         ))}
       </div>
 
-      {/* Bulk controls */}
+      {/* Bulk controls — somente admin */}
+      {user?.role === "admin" && (
       <Card className="p-4 border-amber-500/30 bg-amber-500/5">
         <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-4">
           <div className="flex-1 min-w-0">
@@ -257,6 +260,7 @@ export default function Fancoils() {
           </div>
         </div>
       </Card>
+      )}
 
       {/* Building grid */}
       <Card className="p-4 lg:p-6">

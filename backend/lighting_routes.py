@@ -14,12 +14,12 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from db import db
-from auth import get_current_user, require_admin
+from auth import get_current_user, require_admin, require_module
 from lighting_service import lighting_svc
 
 logger = logging.getLogger("lighting_routes")
 
-router = APIRouter(prefix="/api/lighting", tags=["lighting"])
+router = APIRouter(prefix="/api/lighting", tags=["lighting"], dependencies=[Depends(require_module("iluminacao"))])
 
 UPLOAD_DIR = Path(__file__).parent / "uploads" / "plantas"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
