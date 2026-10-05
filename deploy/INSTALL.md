@@ -1,208 +1,208 @@
 # NX-360 BMS — Instalação Docker passo a passo
 
-Guia pra subir o sistema completo em um servidor Linux com Docker + Docker Compose, atrás de um Nginx que já roteia outros apps. Tempo estimado: **~20 min**.
+Guia pra subir o sistema completo em um servidor Linux com Docker. Acesso por **IP:porta** (não precisa de domínio nem SSL inicialmente). Tempo estimado: **~15 min**.
 
 ---
 
-## 1. Pré-requisitos no servidor
+## Instalação Rápida (recomendada)
 
-Confirme que já tem instalado:
+Se você já tem Docker e Docker Compose v2 no servidor:
+
+```bash
+# 1) Copie o código pro servidor (git clone OU scp do zip do Emergent)
+cd /opt
+git clone <seu-repo-git> nx360-bms   # ou unzip do pacote baixado
+cd nx360-bms/deploy
+
+# 2) Rode o instalador automático
+bash install.sh
+```
+
+O script:
+1. Detecta o IP público do servidor
+2. Pergunta a porta (padrão 8090 — se usar outra, só não conflitar com outros serviços)
+3. Gera `.env` com senhas aleatórias fortes
+4. Libera o firewall UFW (se estiver ativo)
+5. Faz build + sobe os 4 containers (mongo, backend, frontend, gateway)
+6. Aguarda o healthcheck do backend
+7. Mostra a URL de acesso
+
+Depois disso, abra `http://SEU_IP:PORTA/` no navegador. Pronto.
+
+---
+
+## Instalação Manual (se preferir controle total)
+
+### 1. Pré-requisitos
 ```bash
 docker --version          # >= 20.10
-docker compose version    # v2.x  (ou docker-compose se for v1)
-nginx -v                  # já serve os outros apps
+docker compose version    # v2.x
 ```
 
-Se ainda não tiver Docker Compose v2:
+Instalar se faltar:
 ```bash
-sudo apt install docker-compose-plugin -y
+curl -fsSL https://get.docker.com | sh
+apt install docker-compose-plugin -y
 ```
 
----
-
-## 2. Copiar os arquivos pro servidor
-
-Opção A — via `git` (recomendado se você vai dar push a partir do Emergent / GitHub):
+### 2. Baixar o código
 ```bash
 cd /opt
-git clone https://github.com/<seu-usuario>/nx360-bms.git
-cd nx360-bms
+git clone <seu-repo> nx360-bms   # ou scp do zip
+cd nx360-bms/deploy
 ```
 
-Opção B — via `scp` do zip do Emergent:
+### 3. Configurar
 ```bash
-# No seu PC, após baixar o zip:
-scp nx360-bms.zip usuario@seu-servidor:/opt/
-# No servidor:
-cd /opt && unzip nx360-bms.zip -d nx360-bms && cd nx360-bms
-```
-
-> O diretório deve ter: `backend/`, `frontend/`, `deploy/`.
-
----
-
-## 3. Configurar variáveis de ambiente
-
-```bash
-cd /opt/nx360-bms/deploy
 cp .env.example .env
 nano .env
 ```
 
-Preencha **todos** os campos `<...>`:
-
-- `MONGO_PASSWORD` — senha aleatória forte do Mongo
+Preencha:
+- `PUBLIC_PORT` — porta livre no servidor (ex.: 8090; **não use 8080** se Scada-LTS usa)
+- `MONGO_PASSWORD` — gere com `openssl rand -base64 24`
 - `JWT_SECRET` — gere com `openssl rand -hex 32`
-- `CORS_ORIGINS` — origens permitidas no CORS (lista separada por vírgula). Em produção use só a URL pública, ex.: `https://bms.suaempresa.com.br`
-- `REACT_APP_BACKEND_URL` — a mesma URL pública (o React faz chamadas `/api/...` relativas a ela)
+- `REACT_APP_BACKEND_URL` — `http://SEU_IP:PUBLIC_PORT` (sem barra no fim)
+- `CORS_ORIGINS` — `*` (ou liste origens específicas por vírgula)
 
-> ⚠️ A `REACT_APP_BACKEND_URL` é **compilada no build do React** — se mudar depois, precisa rebuildar o container frontend.
-
----
-
-## 4. Subir os containers
-
+### 4. Firewall
 ```bash
-cd /opt/nx360-bms/deploy
+sudo ufw allow 8090/tcp         # porta pública (ajuste se usou outra)
+sudo ufw allow out 1883/tcp     # saída pro broker MQTT
+```
+
+### 5. Subir
+```bash
 docker compose --env-file .env up -d --build
 ```
 
-Vai levar ~2-3 min no primeiro build (compila React + instala Python). Depois é instantâneo.
+Primeiro build: 2-3 min. Depois é instantâneo.
 
-Verifique:
+### 6. Verificar
 ```bash
-docker compose ps                     # 3 containers "running (healthy)"
-docker compose logs -f backend        # Veja "MQTT conectado em..."
-curl http://127.0.0.1:8001/api/health # {"status":"ok"} (ou similar)
-curl http://127.0.0.1:8080/           # HTML do React
+docker compose ps                                 # 4 containers "running (healthy)"
+curl http://127.0.0.1:8090/api/health             # {"status":"ok", ...}
+curl http://127.0.0.1:8090/                       # HTML do React
 ```
 
-Os containers expõem portas **apenas em `127.0.0.1`** — nada vaza pra internet direto. O Nginx do host faz o acesso público.
+Abra `http://SEU_IP:8090/` no navegador.
 
 ---
 
-## 5. DNS + Nginx (proxy público)
+## 🔑 Primeiro login
 
-### 5.1 Apontar o subdomínio
-
-No seu painel DNS (Registro.br, Cloudflare etc.), crie um registro:
-
-| Tipo | Nome | Valor |
-|------|------|-------|
-| A    | bms  | IP público do servidor |
-
-### 5.2 Virtual host do Nginx
-
-Copie o template:
-```bash
-sudo cp /opt/nx360-bms/deploy/nginx-proxy.conf /etc/nginx/sites-available/nx360
-sudo nano /etc/nginx/sites-available/nx360
-```
-
-Troque `bms.suaempresa.com.br` pelo seu domínio real. Habilite:
-```bash
-sudo ln -s /etc/nginx/sites-available/nx360 /etc/nginx/sites-enabled/nx360
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-Teste pelo HTTP: `http://bms.suaempresa.com.br` já deve carregar.
-
-### 5.3 HTTPS com Let's Encrypt
-
-```bash
-sudo apt install certbot python3-certbot-nginx -y
-sudo certbot --nginx -d bms.suaempresa.com.br
-```
-
-O Certbot edita o seu arquivo automaticamente adicionando SSL. Teste `https://bms.suaempresa.com.br`.
-
-> ⚠️ Depois do HTTPS: **se `REACT_APP_BACKEND_URL` não começar com `https://`**, atualize o `.env` e rode `docker compose up -d --build frontend` pra reconstruir.
-
----
-
-## 6. Primeiro login
-
-- URL: `https://bms.suaempresa.com.br`
-- E-mail: `admin@pilares.local` *(ou o padrão do seed — ver `backend/seed.py`)*
-- Senha inicial: `Admin@123` — **o sistema vai forçar troca no primeiro login**
+- Usuário: `admin@pilares.local`
+- Senha: `Admin@123` — **o sistema vai forçar troca no primeiro login**
 
 Depois crie seus usuários em **Admin → Usuários**.
 
 ---
 
-## 7. Configurar o broker MQTT
+## 📡 Configurar MQTT
 
-Entre em **Admin → Broker e Parâmetros** e informe:
-- Host: `156.67.82.199` (seu broker atual)
+Em **Admin → Broker e Parâmetros**:
+- Host: `156.67.82.199`
 - Porta: `1883`
-- TLS: desligado
+- TLS: off
 - Prefixo: `TJS`
-- Simulação: **off**
+- Simulação: off
 
-Clique "Testar conexão" — deve mostrar sucesso. Em "Diagnóstico MQTT" você vê os ESP32 chegando ao vivo.
+Clique "Testar". Em **Admin → Diagnóstico MQTT** você vê os ESP32 chegando ao vivo.
 
 ---
 
-## 8. Operação do dia-a-dia
+## 🔧 Operação
 
-### Atualizar o app (puxar nova versão):
+### Ver logs
+```bash
+docker compose logs -f backend
+docker compose logs -f gateway
+```
+
+### Reiniciar / parar
+```bash
+docker compose restart backend
+docker compose down          # para tudo (preserva dados)
+docker compose up -d         # sobe sem rebuild
+```
+
+### Atualizar o app
 ```bash
 cd /opt/nx360-bms
-git pull                                                     # ou scp o novo zip
+git pull                     # ou scp a nova versão
 cd deploy
 docker compose --env-file .env up -d --build
 ```
 
-### Ver logs:
-```bash
-docker compose logs -f backend | tail -200
-docker compose logs -f frontend
-```
-
-### Parar / reiniciar:
-```bash
-docker compose restart backend
-docker compose down         # para tudo
-docker compose up -d        # sobe sem rebuild
-```
-
 ### Backup automático
-
-Agende o `backup.sh`:
 ```bash
 sudo chmod +x /opt/nx360-bms/deploy/backup.sh
 sudo crontab -e
-# Adicione: 0 3 * * * /opt/nx360-bms/deploy/backup.sh >> /var/log/nx360_backup.log 2>&1
+# Adicione:
+0 3 * * * /opt/nx360-bms/deploy/backup.sh >> /var/log/nx360_backup.log 2>&1
 ```
 
 Backups ficam em `/var/backups/nx360/` com rotação de 14 dias.
 
-### Restaurar banco:
+### Restaurar banco
 ```bash
-docker exec -i nx360_mongo mongorestore --username=nx360admin --password=<SENHA> \
-  --authenticationDatabase=admin --gzip --archive < /var/backups/nx360/mongo_YYYYMMDD.gz
+docker exec -i nx360_mongo mongorestore \
+  --username=nx360admin --password=<SENHA_DO_.ENV> \
+  --authenticationDatabase=admin --gzip --archive \
+  < /var/backups/nx360/mongo_YYYYMMDD.gz
 ```
 
 ---
 
-## 9. Troubleshooting rápido
+## 🔒 HTTPS (opcional, mas recomendado)
 
-| Sintoma | Causa comum | Fix |
-|---|---|---|
-| `502 Bad Gateway` ao abrir o domínio | Container caiu | `docker compose ps` + `logs backend` |
-| Frontend abre mas API dá CORS | `CORS_ORIGINS` ou `REACT_APP_BACKEND_URL` errado no `.env` | Corrija, `up -d --build frontend` |
-| MQTT nunca conecta | Firewall UFW bloqueando saída | `sudo ufw allow out 1883/tcp` |
-| Login OK, mas WebSocket não atualiza | Nginx sem `Upgrade` headers | Confira o bloco `/api/ws` do `nginx-proxy.conf` |
-| Build do frontend falha "memory" | VPS com <2GB RAM | Rode `yarn build` em outra máquina e copie o `/build` |
+Enquanto é acessado por IP:porta HTTP, o tráfego não é criptografado — qualquer um na rede entre o cliente e o servidor consegue ver senhas/dados.
+
+### Opção 1: Caddy na frente (mais simples)
+Se depois você tiver um domínio apontando para o IP, suba um Caddy que faz TLS automático:
+```bash
+docker run -d --name caddy --restart unless-stopped \
+  --network nx360_nx360 \
+  -p 443:443 -p 80:80 \
+  -v caddy_data:/data \
+  caddy:latest caddy reverse-proxy --from bms.seudominio.com --to gateway:80
+```
+
+### Opção 2: Nginx host + Certbot
+Veja o template em `nginx-proxy.conf` e rode `certbot --nginx -d bms.seudominio.com`.
 
 ---
 
-## 10. Requisitos mínimos de servidor
+## 🩺 Troubleshooting
+
+| Sintoma | Causa comum | Fix |
+|---|---|---|
+| `Connection refused` ao abrir no navegador | Porta `PUBLIC_PORT` não liberada no firewall ou provedor cloud | Libere no UFW/SG |
+| Login OK mas tela em branco | `REACT_APP_BACKEND_URL` com IP/porta errada | Corrija `.env` e `up -d --build frontend` |
+| `502 Bad Gateway` | Backend caiu | `docker compose ps` → `logs backend` |
+| MQTT nunca conecta | Firewall UFW bloqueando saída | `sudo ufw allow out 1883/tcp` |
+| WebSocket não atualiza em tempo real | Nginx intermediário sem Upgrade headers | Confira o gateway (já config'd no stack) |
+| Build falha "JavaScript heap out of memory" | VPS <2GB RAM | Build em outra máquina e `COPY --from` |
+
+---
+
+## 💻 Requisitos mínimos de servidor
 
 - **CPU:** 2 vCPUs
 - **RAM:** 2 GB (4 GB confortável — build do React usa ~1 GB)
 - **Disco:** 20 GB SSD
-- **Rede:** porta 80/443 aberta na internet; porta 1883 **de saída** liberada pro broker MQTT
-- **SO:** Ubuntu 22.04 LTS ou Debian 12 (qualquer Linux com Docker roda)
+- **Rede:** porta pública (ex.: 8090) aberta pra internet; porta 1883 **de saída** liberada pro broker MQTT
+- **SO:** Ubuntu 22.04+ ou Debian 12 (qualquer Linux com Docker roda)
 
-Pronto! Qualquer dúvida ou erro durante a instalação, me cola a saída do `docker compose logs` que eu te oriento.
+---
+
+## 📋 Checklist pós-instalação
+
+- [ ] Abriu `http://IP:porta/` no navegador e viu a tela de login
+- [ ] Trocou a senha do admin
+- [ ] Broker MQTT conectado (Admin → Diagnóstico MQTT mostra tráfego)
+- [ ] Firewall liberado pra porta pública + saída 1883
+- [ ] Cron de backup agendado
+- [ ] (opcional) HTTPS configurado com domínio
+
+Qualquer erro, me cola a saída de `docker compose logs backend --tail=100` + `docker compose ps` que eu te oriento.
