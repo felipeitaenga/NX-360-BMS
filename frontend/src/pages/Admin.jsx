@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "../components/ui/dialog";
 import { Checkbox } from "../components/ui/checkbox";
 import { toast } from "sonner";
-import { UserPlus, Trash2, KeyRound, Upload, RefreshCw, Settings as SettingsIcon, Pencil, Radio, Activity, Link2, ArrowDownToLine, Plus } from "lucide-react";
+import { UserPlus, Trash2, KeyRound, Upload, RefreshCw, Settings as SettingsIcon, Pencil, Radio, Activity, Link2, ArrowDownToLine, Plus, Download, Database, AlertTriangle } from "lucide-react";
 
 const MODULES = [
   { id: "home", label: "Início" },
@@ -588,12 +588,128 @@ export default function Admin() {
           <TabsTrigger value="fancoils" data-testid="admin-tab-fancoils">Fancoils</TabsTrigger>
           <TabsTrigger value="settings" data-testid="admin-tab-settings">Broker e Parâmetros</TabsTrigger>
           <TabsTrigger value="diag" data-testid="admin-tab-diag">Diagnóstico MQTT</TabsTrigger>
+          <TabsTrigger value="backup" data-testid="admin-tab-backup">Backup</TabsTrigger>
         </TabsList>
         <TabsContent value="users"><UsersTab /></TabsContent>
         <TabsContent value="fancoils"><FancoilsTab /></TabsContent>
         <TabsContent value="settings"><SettingsTab /></TabsContent>
         <TabsContent value="diag"><MqttDiagTab /></TabsContent>
+        <TabsContent value="backup"><BackupTab /></TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+function BackupTab() {
+  const [downloading, setDownloading] = React.useState(false);
+  const [uploading, setUploading] = React.useState(false);
+  const [wipe, setWipe] = React.useState(false);
+  const [result, setResult] = React.useState(null);
+  const fileRef = React.useRef(null);
+
+  const download = async () => {
+    setDownloading(true);
+    try {
+      const res = await api.get("/admin/backup", { responseType: "blob" });
+      // Extract filename from Content-Disposition
+      let name = "nx360-backup.tar.gz";
+      const cd = res.headers["content-disposition"];
+      if (cd) {
+        const m = cd.match(/filename="([^"]+)"/);
+        if (m) name = m[1];
+      }
+      const url = window.URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url; a.download = name; a.click();
+      window.URL.revokeObjectURL(url);
+      toast.success("Backup gerado");
+    } catch (e) {
+      toast.error(formatApiError(e));
+    } finally { setDownloading(false); }
+  };
+
+  const upload = async (file) => {
+    if (!file) return;
+    if (!window.confirm(wipe
+      ? `ATENÇÃO: a opção "Apagar tudo antes" está LIGADA. Isso vai REMOVER todos os dados atuais (usuários, fancoils, pavimentos, plantas, alarmes…) e substituir pelo backup. Continuar?`
+      : `Restaurar backup "${file.name}"? Registros duplicados serão ignorados.`)) return;
+    setUploading(true); setResult(null);
+    try {
+      const fd = new FormData(); fd.append("file", file);
+      const { data } = await api.post(`/admin/restore?wipe=${wipe}`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setResult(data);
+      toast.success("Backup restaurado — recarregue a página pra ver os dados");
+    } catch (e) { toast.error(formatApiError(e)); }
+    finally { setUploading(false); if (fileRef.current) fileRef.current.value = ""; }
+  };
+
+  return (
+    <div className="space-y-4" data-testid="backup-tab">
+      {/* Download */}
+      <Card className="p-4">
+        <div className="flex items-start gap-3">
+          <Database className="w-5 h-5 text-sky-400 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <div className="font-display font-bold uppercase tracking-wider text-sm">Fazer backup</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              Gera um arquivo <span className="font-mono">.tar.gz</span> contendo todas as coleções do banco (usuários, fancoils, pavimentos, pontos, alarmes, histórico, agendamentos, configurações, mapeamentos MQTT) <b>+ todas as plantas baixas</b> e logos do servidor.
+              Guarde em local seguro — contém dados sensíveis.
+            </div>
+            <Button onClick={download} disabled={downloading} className="mt-3" data-testid="btn-backup-download">
+              <Download className="w-4 h-4 mr-2" /> {downloading ? "Gerando..." : "Baixar backup agora"}
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* Upload */}
+      <Card className="p-4">
+        <div className="flex items-start gap-3">
+          <Upload className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <div className="font-display font-bold uppercase tracking-wider text-sm">Restaurar backup</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              Carrega um arquivo <span className="font-mono">.tar.gz</span> gerado por esta tela. As plantas baixas e logos são restauradas no servidor automaticamente.
+            </div>
+
+            <label className="flex items-center gap-2 mt-3 text-xs">
+              <Switch checked={wipe} onCheckedChange={setWipe} data-testid="backup-wipe-switch" />
+              <span className={wipe ? "text-rose-400 font-bold" : ""}>Apagar TUDO antes de restaurar (modo migração)</span>
+            </label>
+            {wipe && (
+              <div className="mt-2 flex gap-2 items-start text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/40 rounded p-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>Modo migração vai <b>deletar todos os dados atuais</b> antes de inserir os do backup. Use só pra migrar entre servidores ou restaurar de um estado limpo.</span>
+              </div>
+            )}
+
+            <input ref={fileRef} type="file" accept=".tar.gz,.tgz,.gz" className="hidden" data-testid="backup-file-input"
+              onChange={(e) => upload(e.target.files?.[0])} />
+            <Button onClick={() => fileRef.current?.click()} disabled={uploading} variant="outline" className="mt-3" data-testid="btn-backup-restore">
+              <Upload className="w-4 h-4 mr-2" /> {uploading ? "Restaurando..." : "Escolher arquivo e restaurar"}
+            </Button>
+          </div>
+        </div>
+
+        {result && (
+          <div className="mt-4 text-xs bg-muted/40 border border-border rounded p-3" data-testid="backup-restore-result">
+            <div className="font-bold uppercase text-[10px] tracking-widest mb-2 text-emerald-400">Restauração concluída</div>
+            <div className="font-mono space-y-0.5">
+              <div>Arquivos restaurados: <b>{result.files_restored}</b></div>
+              <div>Modo: {result.wipe ? "wipe (apagou tudo)" : "merge"}</div>
+              <div className="mt-1">Coleções:</div>
+              {Object.entries(result.collections || {}).map(([k, v]) => (
+                <div key={k} className="pl-3">
+                  <span className="text-sky-300">{k}</span>:{" "}
+                  {typeof v === "object" ? `${v.inserted} inseridos, ${v.skipped} ignorados` : v}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

@@ -2,9 +2,13 @@
 from __future__ import annotations
 import io
 import csv
+import json
+import tarfile
 import logging
+from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from bson import ObjectId
+from bson.json_util import dumps as bson_dumps, loads as bson_loads
 from fastapi import APIRouter, Depends, HTTPException, Response, Request, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -678,6 +682,140 @@ async def delete_topic_mapping(mid: str, _: dict = Depends(require_admin)):
         raise HTTPException(status_code=404, detail="Mapeamento não encontrado")
     await svc.reload_mappings()
     return {"ok": True}
+
+
+# =============== BACKUP / RESTORE (admin only) ===============
+BACKUP_COLLECTIONS = [
+    "users", "fancoils", "schedules", "alarms", "device_states", "settings",
+    "pavimentos", "lighting_controllers", "lighting_points", "lighting_states",
+    "lighting_events", "topic_mappings",
+]
+UPLOADS_DIR = Path(__file__).parent / "uploads"
+
+
+@router.get("/admin/backup")
+async def download_backup(_: dict = Depends(require_admin)):
+    """Gera um tar.gz com todas as coleções do Mongo + arquivos de uploads (plantas, logos)."""
+    buf = io.BytesIO()
+    collections_info = []
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        # 1) Dump de cada coleção em JSON (bson_dumps preserva ObjectId/datetime)
+        for name in BACKUP_COLLECTIONS:
+            docs = await db[name].find({}).to_list(length=None)
+            data = bson_dumps(docs, indent=2).encode("utf-8")
+            info = tarfile.TarInfo(name=f"db/{name}.json")
+            info.size = len(data)
+            info.mtime = int(datetime.now().timestamp())
+            tar.addfile(info, io.BytesIO(data))
+            collections_info.append({"name": name, "count": len(docs), "bytes": len(data)})
+        # 2) Arquivos de upload (plantas, logos)
+        uploaded_files = 0
+        if UPLOADS_DIR.exists():
+            for file_path in UPLOADS_DIR.rglob("*"):
+                if file_path.is_file():
+                    rel = file_path.relative_to(UPLOADS_DIR.parent)
+                    tar.add(str(file_path), arcname=str(rel))
+                    uploaded_files += 1
+        # 3) Metadata
+        meta = {
+            "version": "1.0",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "collections": collections_info,
+            "uploaded_files": uploaded_files,
+            "app": "NX-360 BMS",
+        }
+        meta_bytes = json.dumps(meta, indent=2).encode("utf-8")
+        info = tarfile.TarInfo(name="metadata.json")
+        info.size = len(meta_bytes)
+        info.mtime = int(datetime.now().timestamp())
+        tar.addfile(info, io.BytesIO(meta_bytes))
+
+    buf.seek(0)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"nx360-backup-{stamp}.tar.gz"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/gzip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/admin/restore")
+async def restore_backup(
+    file: UploadFile = File(...),
+    wipe: bool = False,
+    _: dict = Depends(require_admin),
+):
+    """Restaura um backup gerado por /api/admin/backup.
+    - `wipe=true`: apaga TUDO antes de inserir (recomendado quando restaurando num servidor zerado)
+    - `wipe=false` (padrão): mergeia (insert_many ignorando duplicados por _id)
+    """
+    content = await file.read()
+    if len(content) > 500 * 1024 * 1024:  # 500 MB
+        raise HTTPException(400, "Arquivo maior que 500 MB")
+    try:
+        tar = tarfile.open(fileobj=io.BytesIO(content), mode="r:gz")
+    except Exception as e:
+        raise HTTPException(400, f"Arquivo inválido (não é tar.gz): {e}")
+
+    # Validar: tem metadata.json?
+    try:
+        meta_member = tar.getmember("metadata.json")
+        meta_bytes = tar.extractfile(meta_member).read()
+        meta = json.loads(meta_bytes.decode("utf-8"))
+        if meta.get("app") != "NX-360 BMS":
+            raise HTTPException(400, "Backup não é do NX-360 BMS")
+    except KeyError:
+        raise HTTPException(400, "Backup inválido: metadata.json ausente")
+
+    summary = {"collections": {}, "files_restored": 0, "wipe": wipe}
+
+    # Restaurar coleções
+    for name in BACKUP_COLLECTIONS:
+        member_name = f"db/{name}.json"
+        try:
+            member = tar.getmember(member_name)
+        except KeyError:
+            summary["collections"][name] = "skipped (not in backup)"
+            continue
+        raw = tar.extractfile(member).read()
+        docs = bson_loads(raw.decode("utf-8"))
+        coll = db[name]
+        if wipe:
+            await coll.delete_many({})
+        inserted = 0
+        skipped = 0
+        for doc in docs:
+            try:
+                await coll.insert_one(doc)
+                inserted += 1
+            except Exception:
+                skipped += 1  # duplicate _id ou outro erro
+        summary["collections"][name] = {"inserted": inserted, "skipped": skipped}
+
+    # Restaurar arquivos de upload
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    for member in tar.getmembers():
+        if member.isfile() and member.name.startswith("uploads/"):
+            rel = Path(member.name).relative_to("uploads")
+            target = UPLOADS_DIR / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with open(target, "wb") as out:
+                out.write(tar.extractfile(member).read())
+            summary["files_restored"] += 1
+
+    tar.close()
+    # Reload runtime caches
+    try:
+        await svc.reload_mappings()
+    except Exception:
+        pass
+    try:
+        from lighting_service import lighting_svc
+        await lighting_svc.restore()
+    except Exception:
+        pass
+    return summary
 
 
 # =============== SCHEDULES ===============
