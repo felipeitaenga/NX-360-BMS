@@ -17,7 +17,7 @@ from db import db
 from models import (
     LoginReq, ChangePasswordReq, ResetPasswordAdminReq, UserCreate, UserUpdate, UserOut,
     FancoilCreate, FancoilUpdate, FancoilOut, PermissionsUpdate, CommandReq, BulkCommandReq,
-    AlarmAck, SettingsUpdate, ScheduleCreate, ScheduleUpdate,
+    AlarmAck, SettingsUpdate, ScheduleCreate, ScheduleBulkCreate, ScheduleUpdate,
     TopicMappingCreate, TopicMappingUpdate,
 )
 from auth import (
@@ -871,6 +871,66 @@ async def list_schedules(fancoil_id: str, user: dict = Depends(get_current_user)
     async for s in db.schedules.find({"fancoil_id": fancoil_id}).sort([("hour", 1), ("minute", 1)]):
         out.append(_schedule_out(s))
     return out
+
+
+@router.post("/schedules/bulk")
+async def create_schedule_bulk(req: ScheduleBulkCreate, user: dict = Depends(get_current_user)):
+    """Cria o mesmo agendamento em TODOS os fancoils acessíveis (ou nos informados).
+    Publica SCHEDULE/SET em cada controladora.
+    """
+    if user["role"] == "viewer":
+        raise HTTPException(status_code=403, detail="Viewer não pode criar agendamentos")
+
+    allowed = await allowed_fancoil_ids(user)  # None para admin, lista para operator
+    # Monta a lista alvo
+    if req.fancoil_ids:
+        target_ids = []
+        for fid in req.fancoil_ids:
+            if await can_access_fancoil(user, fid):
+                target_ids.append(fid)
+    else:
+        if allowed is None:  # admin: pega todos ativos
+            target_ids = [str(f["_id"]) async for f in db.fancoils.find({"active": {"$ne": False}})]
+        else:
+            target_ids = list(allowed)
+
+    if not target_ids:
+        raise HTTPException(status_code=400, detail="Nenhum fancoil elegível")
+
+    created = []
+    skipped = []
+    for fid in target_ids:
+        try:
+            fc = await db.fancoils.find_one({"_id": ObjectId(fid)})
+            if not fc:
+                skipped.append({"fancoil_id": fid, "reason": "não encontrado"})
+                continue
+            doc = {
+                "fancoil_id": fid,
+                "days": req.days,
+                "hour": req.hour,
+                "minute": req.minute,
+                "action": req.action,
+                "value": req.value,
+                "enabled": req.enabled,
+                "created_at": now_iso(),
+                "created_by": user["id"],
+                "last_run": None,
+            }
+            res = await db.schedules.insert_one(doc)
+            doc["_id"] = res.inserted_id
+            await svc.publish_schedule_config(fc["device_id"])
+            created.append(_schedule_out(doc))
+        except Exception as e:
+            logger.exception("[bulk-schedule] falha em %s", fid)
+            skipped.append({"fancoil_id": fid, "reason": str(e)})
+
+    return {
+        "created_count": len(created),
+        "skipped_count": len(skipped),
+        "created": created,
+        "skipped": skipped,
+    }
 
 
 @router.post("/schedules")

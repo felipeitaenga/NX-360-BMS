@@ -182,6 +182,16 @@ class ScheduleCreate(BaseModel):
     enabled: bool = True
 
 
+class ScheduleBulkCreate(BaseModel):
+    days: List[int] = Field(default_factory=list)
+    hour: int
+    minute: int
+    action: Literal["estado", "cmd", "setpoint"]
+    value: str
+    enabled: bool = True
+    fancoil_ids: Optional[List[str]] = None  # se None -> todos acessíveis
+
+
 class ScheduleUpdate(BaseModel):
     days: Optional[List[int]] = None
     hour: Optional[int] = None
