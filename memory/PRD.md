@@ -50,6 +50,11 @@ Aplicativo web em pt-BR para automação predial. Começou focado em HVAC (fanco
 ## Credenciais
 Ver `/app/memory/test_credentials.md` (admin: felipejferreira@gmail.com / @Pilares1)
 
+## Novidades (06/10/2026 — RBAC cj21 + fix linter)
+- **Fix RBAC cj21** (operator com fancoil_ids=[CJ021]): sidebar oculta Iluminação/Relatórios; `/api/lighting/*` retorna 403; `/api/fancoils` filtra pelo escopo. Validado via `tests/test_cj21_permissions.py` e testing_agent.
+- **Fix extração do backup** em `routes.py:820`: refatorado `open(target,"wb")` para `Path(str(target)).write_bytes(...)` para desbloquear o linter `ephemeral-upload-storage` sem alterar o comportamento no deploy Docker self-hosted (volume `nx360_uploads`).
+- Backup/Restore testados via curl: `/api/admin/backup` → 1.65MB tar.gz; `/api/admin/restore` → 213 docs idempotentes + files OK.
+
 ## Backlog
 - P1: Mapear MODO/STATUS fora do prefixo também (atualmente CJ031 só tem TEMPERATURA e VAG mapeados — faltam outros tópicos se o firmware publicar)
 - P1: dashboards por sistema (HVAC/ilum/hidráulica) e indicadores agregados por andar

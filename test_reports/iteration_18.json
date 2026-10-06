@@ -1,0 +1,31 @@
+{
+  "summary": "Backend+Frontend regression do fix de permissões do operador cj21. Criado /app/backend/tests/test_cj21_permissions.py (13 testes, 100% pass) cobrindo: (1) /api/fancoils retorna só CJ021 pra cj21 e 15+ pra admin, (2) /api/fancoils/{outro}/GET e /command → 403 pra cj21, (3) /api/lighting/{pavimentos,snapshot,overview,controladoras,pontos} → 403 pra cj21 e 200 pra admin via novo require_module('iluminacao'), (4) /api/auth/me devolve role=operator com permissions.modules=[] e fancoil_ids=[CJ021]. UI testada com Playwright: cj21 vê apenas sidebar [Início, Ar Condicionado, Mapa de Calor, Alarmes] (sem Iluminação/Hidráulica/Relatórios/Configurações), página /ar-condicionado exibe só o quadrado do CJ021 sem card de 'Controle em Massa' (CJ171/CJ172 e outros 13 não aparecem no DOM). Admin continua vendo tudo: 15 fancoils com 'CONTROLE EM MASSA' + botões FORÇAR/LIGAR/DESLIGAR/AUTOMÁTICO, /iluminacao com botões 'Controladoras' e 'Novo pavimento'.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/iluminacao para cj21", "issues": ["Rota /iluminacao não é bloqueada no React Router — ao digitar manualmente a URL, cj21 chega numa página 'Iluminação' vazia ('Nenhum pavimento cadastrado') em vez de redirecionar/404. Nenhum dado vaza (backend retorna 403), mas UX fica estranha. Sugerir gating por rota no AppShell/Router (ou redirect para / quando moduleAllowed('iluminacao')===false)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_cj21_permissions.py",
+    "/app/test_reports/pytest/cj21_results.xml"
+  ],
+  "action_items": [
+    "(Opcional, UX) Gating por rota pra módulos não permitidos no React Router: redirect '/iluminacao', '/hidraulica', '/relatorios' pra '/' quando user.role!=='admin' e módulo não está em perms.modules. Hoje só o sidebar esconde o link."
+  ],
+  "critical_code_review_comments": [
+    "auth.py:allowed_modules() tem bom fallback (modules vazio + fancoil_ids setado → ['ar_condicionado']). Admin bypass preservado (retorna None).",
+    "lighting_routes.py:22 — dependências globais no APIRouter cobrem todos os sub-paths em uma linha; limpo e seguro.",
+    "routes.py:214 — 'if fid not in allowed: continue' já é a abordagem segura por default; comentário explica bem.",
+    "Pequena inconsistência de nomenclatura: módulo 'iluminacao' (sem acento) no backend vs frontend AppShell precisa usar exatamente 'iluminacao' em perms.modules; vale documentar os IDs canônicos (ar_condicionado, iluminacao, hidraulica, relatorios) em um lugar único."
+  ],
+  "updated_files": ["/app/backend/tests/test_cj21_permissions.py (novo)"],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100% dos critérios de aceite"},
+  "test_credentials": "admin: felipejferreira@gmail.com / @Pilares1 ; operator cj21: cj21@cj21.com / Cj21@2027!x (senha já trocada pelo teste; a senha original Cj21@2026 não é mais válida)",
+  "seed_data_creation": "Nenhum dado novo criado. Senha de cj21 trocada de Cj21@2026 → Cj21@2027!x via /api/auth/change-password (must_change_password flag consumida). Atualizar /app/memory/test_credentials.md se desejar persistir.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reusar test_cj21_permissions.py como regressão. Senha atual de cj21 é Cj21@2027!x (não Cj21@2026). Rota /iluminacao não bloqueia operator no front — se main agent decidir fazer gating por rota, o teste UI precisa ser atualizado para esperar redirect ao invés de página vazia."
+}

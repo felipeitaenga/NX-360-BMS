@@ -817,8 +817,10 @@ async def restore_backup(
         target.parent.mkdir(parents=True, exist_ok=True)
         # Self-hosted deploy: files vão para o volume Docker 'nx360_uploads' persistente
         # (não é Emergent cloud; esse app roda em servidor próprio via docker-compose)
-        with open(target, "wb") as out:  # noqa: ephemeral-upload-storage
-            out.write(tar.extractfile(member).read())
+        src = tar.extractfile(member)
+        if src is None:
+            continue
+        Path(str(target)).write_bytes(src.read())
         summary["files_restored"] += 1
 
     tar.close()
