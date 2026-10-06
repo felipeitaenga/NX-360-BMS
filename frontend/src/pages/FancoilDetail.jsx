@@ -11,7 +11,6 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { toast } from "sonner";
 import { ArrowLeft, Minus, Plus, Power, Hand, Wifi, WifiOff } from "lucide-react";
 import FancoilSchematicSVG from "../components/FancoilSchematicSVG";
-import SchedulesPanel from "../components/SchedulesPanel";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
 } from "recharts";
@@ -397,9 +396,6 @@ export default function FancoilDetail() {
         </div>
       </Card>
 
-      <Card className="p-4 lg:p-6">
-        <SchedulesPanel fancoilId={id} canEdit={canCommand} />
-      </Card>
     </div>
   );
 }

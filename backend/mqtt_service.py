@@ -132,10 +132,9 @@ class MQTTService:
         if not self._alarm_task:
             from alarms import run_alarm_engine
             self._alarm_task = asyncio.create_task(run_alarm_engine(self))
-        # Start scheduler
-        if not hasattr(self, "_sched_task") or not self._sched_task:
-            from scheduler import run_scheduler
-            self._sched_task = asyncio.create_task(run_scheduler(self))
+        # NOTE: scheduler loop desativado — a execução dos horários agora é feita
+        # pelo próprio ESP32 (controladora). O backend apenas publica a lista
+        # de agendamentos via publish_schedule_config() quando o usuário edita.
 
     async def restart(self):
         # Clear in-memory telemetry when switching modes (avoid stale sim data
@@ -560,6 +559,48 @@ class MQTTService:
         self.pending_cmds[f"{device_id}:{var}"] = {"log_id": res.inserted_id, "ts": time.time()}
         asyncio.create_task(self._cmd_timeout(res.inserted_id, device_id, var))
         return {"id": str(res.inserted_id), "topic": topic, "value": value}
+
+    async def publish_schedule_config(self, device_id: str) -> dict:
+        """Publica a lista de agendamentos ativos do fancoil no tópico SCHEDULE/SET
+        (retained). Payload = texto puro, uma linha por agendamento no formato
+        'IDX;HH:MM;DIAS;ACAO;VALOR;EN'. Payload vazio = apagar.
+        """
+        action_map = {"estado": "ESTADO", "cmd": "CMD", "setpoint": "SETPOINT"}
+        fc = await db.fancoils.find_one({"device_id": device_id})
+        lines = []
+        if fc:
+            cursor = db.schedules.find({"fancoil_id": str(fc["_id"])}).sort(
+                [("hour", 1), ("minute", 1)]
+            )
+            idx = 0
+            async for s in cursor:
+                if not s.get("enabled", True):
+                    continue
+                days = s.get("days") or []
+                days_str = ",".join(str(d) for d in sorted(days)) if days else "*"
+                action = action_map.get(s.get("action", ""), str(s.get("action", "")).upper())
+                raw_val = str(s.get("value", "")).strip()
+                if s.get("action") in ("estado", "cmd"):
+                    val = raw_val.lower()
+                    if val not in ("true", "false"):
+                        val = "true" if val in ("1", "on", "yes") else "false"
+                else:
+                    val = raw_val
+                hh = int(s.get("hour", 0))
+                mm = int(s.get("minute", 0))
+                lines.append(f"{idx};{hh:02d}:{mm:02d};{days_str};{action};{val};1")
+                idx += 1
+        payload = "\n".join(lines)
+        topic = f"{self.topic_prefix}/{device_id}/SCHEDULE/SET"
+        if self._client and self.connected:
+            try:
+                self._client.publish(topic, payload, qos=1, retain=True)
+                logger.info("[schedule] publicado %s (%d entradas)", topic, len(lines))
+            except Exception:
+                logger.exception("[schedule] falha ao publicar")
+        else:
+            logger.warning("[schedule] MQTT desconectado, config não enviada (%s)", topic)
+        return {"topic": topic, "payload": payload, "count": len(lines)}
 
     async def _cmd_timeout(self, log_id, device_id: str, var: str):
         await asyncio.sleep(15)

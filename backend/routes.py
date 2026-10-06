@@ -852,6 +852,17 @@ def _schedule_out(s: dict) -> dict:
     }
 
 
+@router.get("/schedules")
+async def list_all_schedules(user: dict = Depends(get_current_user)):
+    """Retorna todos os agendamentos dos fancoils que o usuário pode acessar."""
+    out = []
+    async for s in db.schedules.find({}).sort([("hour", 1), ("minute", 1)]):
+        if not await can_access_fancoil(user, s["fancoil_id"]):
+            continue
+        out.append(_schedule_out(s))
+    return out
+
+
 @router.get("/schedules/{fancoil_id}")
 async def list_schedules(fancoil_id: str, user: dict = Depends(get_current_user)):
     if not await can_access_fancoil(user, fancoil_id):
@@ -877,6 +888,7 @@ async def create_schedule(req: ScheduleCreate, user: dict = Depends(get_current_
     doc["last_run"] = None
     res = await db.schedules.insert_one(doc)
     doc["_id"] = res.inserted_id
+    await svc.publish_schedule_config(fc["device_id"])
     return _schedule_out(doc)
 
 
@@ -893,6 +905,9 @@ async def update_schedule(schedule_id: str, req: ScheduleUpdate, user: dict = De
     if upd:
         await db.schedules.update_one({"_id": ObjectId(schedule_id)}, {"$set": upd})
     s = await db.schedules.find_one({"_id": ObjectId(schedule_id)})
+    fc = await db.fancoils.find_one({"_id": ObjectId(s["fancoil_id"])})
+    if fc:
+        await svc.publish_schedule_config(fc["device_id"])
     return _schedule_out(s)
 
 
@@ -905,7 +920,10 @@ async def delete_schedule(schedule_id: str, user: dict = Depends(get_current_use
         raise HTTPException(status_code=404, detail="Não encontrado")
     if not await can_access_fancoil(user, s["fancoil_id"]):
         raise HTTPException(status_code=403, detail="Sem permissão")
+    fc = await db.fancoils.find_one({"_id": ObjectId(s["fancoil_id"])})
     await db.schedules.delete_one({"_id": ObjectId(schedule_id)})
+    if fc:
+        await svc.publish_schedule_config(fc["device_id"])
     return {"ok": True}
 
 

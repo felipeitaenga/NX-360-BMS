@@ -6,7 +6,7 @@ import { useTelemetry } from "../context/TelemetryContext";
 import { Card } from "../components/ui/card";
 import { Thermometer } from "lucide-react";
 
-function tempColor(t, min = 15, max = 30) {
+function tempColor(t, min = 10, max = 30) {
   if (t == null) return { bg: "#1e293b", fg: "#64748b" };
   // Blue (cold) -> green (ok) -> red (hot)
   const clamped = Math.max(min, Math.min(max, t));
@@ -35,28 +35,24 @@ export default function MapaCalor() {
   });
   const { states } = useTelemetry();
 
+  // Escala FIXA 10°C .. 30°C (independente dos valores atuais)
+  const MIN_SCALE = 10;
+  const MAX_SCALE = 30;
   const { floors, byFloorSide, min, max } = useMemo(() => {
     const by = {};
     const floorsSet = new Set();
-    let minT = Infinity, maxT = -Infinity;
     cells.forEach((c) => {
-      const live = states[c.name] ? {} : {};
-      // merge live state by matching device_id to cell.name? We only have cells by id; use states by device_id.
       floorsSet.add(c.floor);
       by[c.floor] = by[c.floor] || {};
       by[c.floor][c.side] = c;
-      if (typeof c.temperature === "number") {
-        if (c.temperature < minT) minT = c.temperature;
-        if (c.temperature > maxT) maxT = c.temperature;
-      }
     });
     return {
       floors: [...floorsSet].sort((a, b) => b - a),
       byFloorSide: by,
-      min: minT === Infinity ? 18 : Math.floor(minT),
-      max: maxT === -Infinity ? 30 : Math.ceil(maxT),
+      min: MIN_SCALE,
+      max: MAX_SCALE,
     };
-  }, [cells, states]);
+  }, [cells]);
 
   const Cell = ({ c }) => {
     if (!c) return <div className="h-14 rounded border border-dashed border-border/40" />;

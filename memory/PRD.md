@@ -50,6 +50,21 @@ Aplicativo web em pt-BR para automação predial. Começou focado em HVAC (fanco
 ## Credenciais
 Ver `/app/memory/test_credentials.md` (admin: felipejferreira@gmail.com / @Pilares1)
 
+## Novidades (06/10/2026 — v2: UX menu + Programação Horária na controladora)
+- **Mapa de Calor**: escala **fixa 10–30 °C** (independe dos valores correntes).
+- **Trocar senha pelo próprio usuário**: botão "Trocar senha" na sidebar desktop + drawer mobile → `/trocar-senha` (endpoint já existia).
+- **Sidebar reorganizada**: "Ar Condicionado" virou menu expansível com 4 sub-itens — Fancoil, Mapa de Calor, CAG, Programação Horária.
+- **Rotas novas**:
+  - `/ar-condicionado/cag` → página "Em breve" (Central de Água Gelada).
+  - `/ar-condicionado/programacao-horaria` → página dedicada, lista todos os fancoils acessíveis, permite editar schedules e mostra o **prompt pronto para o Claude** ajustar o firmware ESP32.
+- **FancoilDetail**: painel de Agendamentos removido da tela de cada fancoil (centralizado na nova página).
+- **Backend — Programação Horária passa para a controladora**:
+  - Novo endpoint `GET /api/schedules` (lista todos os agendamentos acessíveis).
+  - `svc.publish_schedule_config(device_id)` publica retained em `TJS/{device_id}/SCHEDULE/SET` sempre que um schedule é criado/editado/removido. Payload = multi-linha `IDX;HH:MM;DIAS;ACAO;VALOR;EN`. Payload vazio = apagar.
+  - Loop `scheduler.py` **desativado** (o backend não dispara mais CMD/ESTADO/SETPOINT no horário — a controladora passa a executar internamente).
+- **Fancoils page**: coluna central "Prédio" agora estica até o fim da grade (`items-stretch` + `self-stretch`), com rótulo PRÉDIO dentro da coluna.
+- **Doc**: `/app/docs/esp32_schedule_prompt.md` com o prompt completo para o firmware (versionado).
+
 ## Novidades (06/10/2026 — RBAC cj21 + fix linter)
 - **Fix RBAC cj21** (operator com fancoil_ids=[CJ021]): sidebar oculta Iluminação/Relatórios; `/api/lighting/*` retorna 403; `/api/fancoils` filtra pelo escopo. Validado via `tests/test_cj21_permissions.py` e testing_agent.
 - **Fix extração do backup** em `routes.py:820`: refatorado `open(target,"wb")` para `Path(str(target)).write_bytes(...)` para desbloquear o linter `ephemeral-upload-storage` sem alterar o comportamento no deploy Docker self-hosted (volume `nx360_uploads`).

@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Wind, Lightbulb, Droplets, FileText, Siren, Settings,
-  LogOut, Sun, Moon, Menu, X, Thermometer, Volume2, VolumeX,
+  LogOut, Sun, Moon, Menu, X, Thermometer, Volume2, VolumeX, ChevronDown, ChevronRight,
+  KeyRound, Snowflake, Clock,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
@@ -13,8 +14,19 @@ import { api } from "../lib/api";
 
 const ITEMS = [
   { id: "home", label: "Início", icon: LayoutDashboard, path: "/", module: "home" },
-  { id: "fancoils", label: "Ar Condicionado", icon: Wind, path: "/ar-condicionado", module: "ar_condicionado" },
-  { id: "heatmap", label: "Mapa de Calor", icon: Thermometer, path: "/mapa-calor", module: "ar_condicionado" },
+  {
+    id: "fancoils",
+    label: "Ar Condicionado",
+    icon: Wind,
+    path: "/ar-condicionado",
+    module: "ar_condicionado",
+    children: [
+      { id: "fancoils-list", label: "Fancoil", icon: Wind, path: "/ar-condicionado" },
+      { id: "heatmap", label: "Mapa de Calor", icon: Thermometer, path: "/mapa-calor" },
+      { id: "cag", label: "CAG", icon: Snowflake, path: "/ar-condicionado/cag" },
+      { id: "prog-horaria", label: "Programação Horária", icon: Clock, path: "/ar-condicionado/programacao-horaria" },
+    ],
+  },
   { id: "lighting", label: "Iluminação", icon: Lightbulb, path: "/iluminacao", module: "iluminacao" },
   { id: "hydraulics", label: "Hidráulica", icon: Droplets, path: "/hidraulica", module: "hidraulica" },
   { id: "reports", label: "Relatórios", icon: FileText, path: "/relatorios", module: "relatorios" },
@@ -25,15 +37,11 @@ const ITEMS = [
 function moduleAllowed(user, perms, item) {
   if (item.adminOnly) return user?.role === "admin";
   if (user?.role === "admin") return true;
-  // Sempre mostra o Início
   if (item.module === "home") return true;
-  // Se o admin cadastrou módulos explicitamente → whitelist estrita
   if (perms?.modules?.length) return perms.modules.includes(item.module);
-  // Se o usuário tem permissão de fancoil específica → só vê módulos HVAC
   if (perms?.fancoil_ids?.length) {
     return ["ar_condicionado", "alarmes"].includes(item.module);
   }
-  // Sem permissões cadastradas = acesso restrito ao Início só
   return false;
 }
 
@@ -44,6 +52,7 @@ export default function AppShell({ children }) {
   const { alarmsBump } = useTelemetry();
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
 
   const { data: activeAlarms = [] } = useQuery({
     queryKey: ["active-alarms", alarmsBump],
@@ -54,10 +63,71 @@ export default function AppShell({ children }) {
 
   const items = ITEMS.filter((i) => moduleAllowed(user, perms, i));
 
+  const isChildActive = (children = []) =>
+    children.some((c) => location.pathname === c.path || location.pathname.startsWith(c.path + "/"));
+
+  const [expandedKeys, setExpandedKeys] = useState(() => {
+    const map = {};
+    ITEMS.forEach((it) => {
+      if (it.children && isChildActive(it.children)) map[it.id] = true;
+    });
+    return map;
+  });
+
+  const toggleExpand = (id) => setExpandedKeys((p) => ({ ...p, [id]: !p[id] }));
+
   const Nav = ({ onClick }) => (
-    <nav className="flex-1 flex flex-col gap-1 px-3 py-4">
+    <nav className="flex-1 flex flex-col gap-1 px-3 py-4 overflow-y-auto">
       {items.map((item) => {
         const Icon = item.icon;
+        if (item.children) {
+          const anyActive = isChildActive(item.children);
+          const expanded = !!expandedKeys[item.id] || anyActive;
+          return (
+            <div key={item.id} className="flex flex-col">
+              <button
+                type="button"
+                onClick={() => toggleExpand(item.id)}
+                data-testid={`nav-${item.id}-toggle`}
+                className={`group flex items-center gap-3 px-3 py-3 rounded-md transition-all text-left border-l-4 ${
+                  anyActive
+                    ? "bg-sky-600/10 text-sky-200 border-sky-500 font-semibold"
+                    : "text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 border-transparent"
+                }`}
+              >
+                <Icon className="w-5 h-5" strokeWidth={1.75} />
+                <span className="text-sm flex-1">{item.label}</span>
+                {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+              </button>
+              {expanded && (
+                <div className="ml-3 pl-2 border-l border-slate-700/60 flex flex-col gap-1 mt-1">
+                  {item.children.map((c) => {
+                    const CIcon = c.icon;
+                    return (
+                      <NavLink
+                        key={c.id}
+                        to={c.path}
+                        end={c.path === "/ar-condicionado"}
+                        onClick={onClick}
+                        data-testid={`nav-${c.id}`}
+                        className={({ isActive }) =>
+                          `flex items-center gap-2 px-3 py-2 rounded-md text-xs transition-all ${
+                            isActive
+                              ? "bg-sky-600/20 text-sky-200 font-semibold"
+                              : "text-slate-400 hover:text-slate-100 hover:bg-slate-800/60"
+                          }`
+                        }
+                      >
+                        <CIcon className="w-4 h-4" strokeWidth={1.75} />
+                        <span>{c.label}</span>
+                      </NavLink>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        }
         return (
           <NavLink
             key={item.id}
@@ -88,6 +158,11 @@ export default function AppShell({ children }) {
     </nav>
   );
 
+  const changePassword = () => {
+    setOpen(false);
+    navigate("/trocar-senha");
+  };
+
   return (
     <div className="min-h-screen flex bg-background text-foreground">
       {/* Desktop sidebar */}
@@ -108,6 +183,13 @@ export default function AppShell({ children }) {
             <div className="truncate">{user?.email}</div>
             <div className="uppercase tracking-wider text-sky-400 mt-1">{user?.role}</div>
           </div>
+          <button
+            data-testid="change-password-link"
+            onClick={changePassword}
+            className="w-full flex items-center justify-center gap-2 py-2 mt-1 rounded-md bg-slate-800/60 hover:bg-slate-800 text-slate-200 text-xs"
+          >
+            <KeyRound className="w-4 h-4" /> Trocar senha
+          </button>
           <div className="flex items-center gap-2 mt-2">
             <button
               data-testid="theme-toggle-button"
@@ -177,9 +259,16 @@ export default function AppShell({ children }) {
             </div>
             <Nav onClick={() => setOpen(false)} />
             <button
+              data-testid="change-password-mobile"
+              onClick={changePassword}
+              className="mx-3 mb-2 flex items-center justify-center gap-2 py-2 rounded-md bg-slate-800/60 text-slate-200 text-sm"
+            >
+              <KeyRound className="w-4 h-4" /> Trocar senha
+            </button>
+            <button
               data-testid="logout-mobile"
               onClick={async () => { await logout(); navigate("/login"); }}
-              className="m-3 flex items-center justify-center gap-2 py-2 rounded-md bg-red-900/40 text-red-200 text-sm"
+              className="m-3 mt-0 flex items-center justify-center gap-2 py-2 rounded-md bg-red-900/40 text-red-200 text-sm"
             >
               <LogOut className="w-4 h-4" /> Sair
             </button>

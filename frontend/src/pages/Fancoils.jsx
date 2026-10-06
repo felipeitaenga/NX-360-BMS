@@ -264,7 +264,7 @@ export default function Fancoils() {
 
       {/* Building grid */}
       <Card className="p-4 lg:p-6">
-        <div className="grid grid-cols-[1fr_auto_1fr] gap-4 lg:gap-6 items-start">
+        <div className="grid grid-cols-[1fr_auto_1fr] gap-4 lg:gap-6 items-stretch">
           <div className="flex flex-col gap-2">
             {floors.map((f) => {
               const fc = leftByFloor[f];
@@ -273,10 +273,12 @@ export default function Fancoils() {
               return <FancoilItem key={fc.id} fc={fc} state={st} hasAlarm={alarmDevices.has(fc.device_id)} side={1} />;
             })}
           </div>
-          <div className="flex flex-col items-center justify-start">
-            <div className="w-6 lg:w-10 bg-gradient-to-b from-sky-500/20 via-sky-500/40 to-sky-500/20 rounded-sm border border-sky-500/30"
-                 style={{ minHeight: `${Math.max(floors.length, 1) * 48}px` }} />
-            <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mt-2">Prédio</div>
+          <div className="flex flex-col items-center self-stretch">
+            <div className="flex-1 w-6 lg:w-10 bg-gradient-to-b from-sky-500/20 via-sky-500/40 to-sky-500/20 rounded-sm border border-sky-500/30 relative">
+              <div className="absolute inset-x-0 bottom-2 font-mono text-[10px] uppercase tracking-widest text-sky-200/80 text-center [writing-mode:horizontal-tb]">
+                PRÉDIO
+              </div>
+            </div>
           </div>
           <div className="flex flex-col gap-2">
             {floors.map((f) => {

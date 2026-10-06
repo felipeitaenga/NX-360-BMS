@@ -18,6 +18,8 @@ import Relatorios from "./pages/Relatorios";
 import Admin from "./pages/Admin";
 import EmBreve from "./pages/EmBreve";
 import MapaCalor from "./pages/MapaCalor";
+import ProgramacaoHoraria from "./pages/ProgramacaoHoraria";
+import CAG from "./pages/CAG";
 import Iluminacao from "./pages/Iluminacao";
 import IluminacaoPavimento from "./pages/IluminacaoPavimento";
 import IluminacaoControladoras from "./pages/IluminacaoControladoras";
@@ -57,6 +59,8 @@ function App() {
                 <Route path="/trocar-senha" element={<Protected><ChangePassword /></Protected>} />
                 <Route path="/" element={<Protected><Shell><Home /></Shell></Protected>} />
                 <Route path="/ar-condicionado" element={<Protected><Shell><Fancoils /></Shell></Protected>} />
+                <Route path="/ar-condicionado/programacao-horaria" element={<Protected><Shell><ProgramacaoHoraria /></Shell></Protected>} />
+                <Route path="/ar-condicionado/cag" element={<Protected><Shell><CAG /></Shell></Protected>} />
                 <Route path="/ar-condicionado/:id" element={<Protected><Shell><FancoilDetail /></Shell></Protected>} />
                 <Route path="/mapa-calor" element={<Protected><Shell><MapaCalor /></Shell></Protected>} />
                 <Route path="/alarmes" element={<Protected><Shell><Alarmes /></Shell></Protected>} />
