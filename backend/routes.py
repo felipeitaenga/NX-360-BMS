@@ -240,6 +240,12 @@ async def create_fancoil(req: FancoilCreate, _: dict = Depends(require_admin)):
     res = await db.fancoils.insert_one(doc)
     doc["_id"] = res.inserted_id
     await db.devices.delete_one({"device_id": req.device_id})
+    # Publica agenda inicial (vazia) com retained — garante que a controladora nova,
+    # ao conectar, saiba que ainda não tem agenda nenhuma (limpa qualquer resíduo).
+    try:
+        await svc.publish_schedule_config(req.device_id)
+    except Exception:
+        logger.exception("[schedule] falha ao publicar agenda inicial para %s", req.device_id)
     return _fancoil_out(doc)
 
 
@@ -280,6 +286,16 @@ async def update_fancoil(fancoil_id: str, req: FancoilUpdate, _: dict = Depends(
     if upd:
         await db.fancoils.update_one({"_id": oid}, {"$set": upd})
     fc = await db.fancoils.find_one({"_id": oid})
+    # Se trocou de device_id (nova placa / MAC novo), reemite as agendas no ID novo
+    # e limpa o retained do ID antigo.
+    if "device_id" in upd and upd["device_id"] != old_device_id:
+        try:
+            # Limpa agenda retained do ID antigo (payload vazio)
+            if svc._client and svc.connected:
+                svc._client.publish(f"{svc.topic_prefix}/{old_device_id}/SCHEDULE/SET", "", qos=1, retain=True)
+            await svc.publish_schedule_config(upd["device_id"])
+        except Exception:
+            logger.exception("[schedule] falha ao re-publicar após troca de device_id")
     return _fancoil_out(fc)
 
 
@@ -873,6 +889,88 @@ async def list_schedules(fancoil_id: str, user: dict = Depends(get_current_user)
     return out
 
 
+MAX_SCHEDULES_PER_DEVICE = 10
+
+
+@router.get("/schedules/health/online-sem-agenda")
+async def online_without_schedule(user: dict = Depends(get_current_user)):
+    """Lista fancoils online cujo ID ainda não tem nenhuma agenda cadastrada."""
+    allowed = await allowed_fancoil_ids(user)
+    out = []
+    async for fc in db.fancoils.find({"active": {"$ne": False}}):
+        fid = str(fc["_id"])
+        if allowed is not None and fid not in allowed:
+            continue
+        count = await db.schedules.count_documents({"fancoil_id": fid})
+        if count > 0:
+            continue
+        st = svc.states.get(fc["device_id"])
+        if not st or not st.online:
+            continue
+        out.append({
+            "fancoil_id": fid,
+            "name": fc.get("name"),
+            "device_id": fc.get("device_id"),
+            "floor": fc.get("floor"),
+            "side": fc.get("side"),
+        })
+    return out
+
+
+class CopyScheduleReq(BaseModel):
+    from_fancoil_id: str
+    to_fancoil_id: str
+    replace: bool = False  # True = apaga agendas do destino antes de copiar
+
+
+@router.post("/schedules/copy")
+async def copy_schedules(req: CopyScheduleReq, user: dict = Depends(get_current_user)):
+    """Copia todos os agendamentos de um fancoil para outro (útil ao trocar placa).
+    Publica SCHEDULE/SET na controladora de destino após copiar.
+    """
+    if user["role"] == "viewer":
+        raise HTTPException(status_code=403, detail="Viewer não pode copiar agendamentos")
+    if not await can_access_fancoil(user, req.from_fancoil_id):
+        raise HTTPException(status_code=403, detail="Sem permissão na origem")
+    if not await can_access_fancoil(user, req.to_fancoil_id):
+        raise HTTPException(status_code=403, detail="Sem permissão no destino")
+    dst = await db.fancoils.find_one({"_id": ObjectId(req.to_fancoil_id)})
+    if not dst:
+        raise HTTPException(status_code=404, detail="Fancoil de destino não encontrado")
+
+    if req.replace:
+        await db.schedules.delete_many({"fancoil_id": req.to_fancoil_id})
+
+    # Verifica limite 10
+    existing = await db.schedules.count_documents({"fancoil_id": req.to_fancoil_id})
+    src_count = await db.schedules.count_documents({"fancoil_id": req.from_fancoil_id})
+    if existing + src_count > MAX_SCHEDULES_PER_DEVICE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Limite de {MAX_SCHEDULES_PER_DEVICE} agendamentos por controladora excedido "
+                   f"(destino tem {existing}, origem tem {src_count}).",
+        )
+
+    copied = 0
+    async for s in db.schedules.find({"fancoil_id": req.from_fancoil_id}):
+        doc = {
+            "fancoil_id": req.to_fancoil_id,
+            "days": s.get("days", []),
+            "hour": s.get("hour", 0),
+            "minute": s.get("minute", 0),
+            "action": s.get("action"),
+            "value": s.get("value"),
+            "enabled": s.get("enabled", True),
+            "created_at": now_iso(),
+            "created_by": user["id"],
+            "last_run": None,
+        }
+        await db.schedules.insert_one(doc)
+        copied += 1
+    await svc.publish_schedule_config(dst["device_id"])
+    return {"copied": copied, "destination_device_id": dst["device_id"]}
+
+
 @router.post("/schedules/bulk")
 async def create_schedule_bulk(req: ScheduleBulkCreate, user: dict = Depends(get_current_user)):
     """Cria o mesmo agendamento em TODOS os fancoils acessíveis (ou nos informados).
@@ -897,6 +995,15 @@ async def create_schedule_bulk(req: ScheduleBulkCreate, user: dict = Depends(get
     if not target_ids:
         raise HTTPException(status_code=400, detail="Nenhum fancoil elegível")
 
+    # Validação setpoint
+    if req.action == "setpoint":
+        try:
+            v = float(req.value)
+            if v < 10.0 or v > 35.0:
+                raise HTTPException(status_code=400, detail="Setpoint deve estar entre 10 e 35 °C")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Setpoint inválido")
+
     created = []
     skipped = []
     for fid in target_ids:
@@ -904,6 +1011,11 @@ async def create_schedule_bulk(req: ScheduleBulkCreate, user: dict = Depends(get
             fc = await db.fancoils.find_one({"_id": ObjectId(fid)})
             if not fc:
                 skipped.append({"fancoil_id": fid, "reason": "não encontrado"})
+                continue
+            # Limite 10 slots
+            cur_count = await db.schedules.count_documents({"fancoil_id": fid})
+            if cur_count >= MAX_SCHEDULES_PER_DEVICE:
+                skipped.append({"fancoil_id": fid, "name": fc.get("name"), "reason": f"já no limite de {MAX_SCHEDULES_PER_DEVICE} agendamentos"})
                 continue
             doc = {
                 "fancoil_id": fid,
@@ -939,6 +1051,20 @@ async def create_schedule(req: ScheduleCreate, user: dict = Depends(get_current_
         raise HTTPException(status_code=403, detail="Viewer não pode criar agendamentos")
     if not await can_access_fancoil(user, req.fancoil_id):
         raise HTTPException(status_code=403, detail="Sem permissão")
+    # Validações do contrato ESP32
+    if req.action == "setpoint":
+        try:
+            v = float(req.value)
+            if v < 10.0 or v > 35.0:
+                raise HTTPException(status_code=400, detail="Setpoint deve estar entre 10 e 35 °C")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Setpoint inválido")
+    count = await db.schedules.count_documents({"fancoil_id": req.fancoil_id})
+    if count >= MAX_SCHEDULES_PER_DEVICE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Esta controladora já tem {MAX_SCHEDULES_PER_DEVICE} agendamentos (limite máximo).",
+        )
     fc = await db.fancoils.find_one({"_id": ObjectId(req.fancoil_id)})
     if not fc:
         raise HTTPException(status_code=404, detail="Fancoil não encontrado")

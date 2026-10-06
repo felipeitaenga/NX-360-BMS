@@ -11,6 +11,7 @@ import {
 import { toast } from "sonner";
 import {
   Power, PowerOff, Hand, Cog, Thermometer, Plus, Trash2, Clock,
+  CheckCircle2, AlertCircle, CircleDashed, Info,
 } from "lucide-react";
 
 const DAYS = [
@@ -29,6 +30,8 @@ const PRESETS = [
   { id: "all", label: "Todos os dias", days: [0, 1, 2, 3, 4, 5, 6] },
 ];
 
+const MAX_SLOTS = 10;
+
 /* --------- Tabs (tipos de agendamento) ---------- */
 const TABS = [
   {
@@ -44,7 +47,7 @@ const TABS = [
     label: "Modo (Auto / Forçado)",
     icon: Cog,
     color: "sky",
-    description: "Alterna o modo da controladora entre Automático (segue setpoint) e Forçado (segue comando manual).",
+    description: "Alterna o modo entre Automático (segue setpoint) e Forçado (segue comando manual).",
     defaultValue: "true",
   },
   {
@@ -57,7 +60,6 @@ const TABS = [
   },
 ];
 
-// Mapeia backend action/value → tab visual
 function tabOf(action) {
   if (action === "cmd") return "onoff";
   if (action === "estado") return "mode";
@@ -80,6 +82,41 @@ function describeDays(days) {
   return DAYS.filter((d) => days.includes(d.v)).map((d) => d.short).join(" · ");
 }
 
+/* ---------- Sync badge ---------- */
+function SyncBadge({ fancoilState }) {
+  if (!fancoilState?.schedule_sent_at) {
+    return (
+      <span
+        data-testid="sync-badge-never"
+        className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-[10px] uppercase tracking-wider border border-slate-600 text-slate-400"
+        title="Nenhuma agenda publicada ainda neste ID"
+      >
+        <CircleDashed className="w-3 h-3" /> Sem agenda publicada
+      </span>
+    );
+  }
+  if (fancoilState.schedule_in_sync) {
+    return (
+      <span
+        data-testid="sync-badge-synced"
+        className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-[10px] uppercase tracking-wider border border-emerald-500/60 bg-emerald-500/10 text-emerald-300"
+        title={`Confirmado pela controladora em ${new Date(fancoilState.schedule_applied_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`}
+      >
+        <CheckCircle2 className="w-3 h-3" /> Sincronizado
+      </span>
+    );
+  }
+  return (
+    <span
+      data-testid="sync-badge-pending"
+      className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-[10px] uppercase tracking-wider border border-amber-500/60 bg-amber-500/10 text-amber-200"
+      title="Enviamos a agenda, mas a controladora ainda não confirmou a aplicação (SCHEDULE/STATE)"
+    >
+      <AlertCircle className="w-3 h-3" /> Aguardando confirmação
+    </span>
+  );
+}
+
 /* ---------- Component ---------- */
 export default function SchedulesPanel({ fancoilId, canEdit }) {
   const qc = useQueryClient();
@@ -88,11 +125,16 @@ export default function SchedulesPanel({ fancoilId, canEdit }) {
     queryFn: async () => (await api.get(`/schedules/${fancoilId}`)).data,
     refetchInterval: 60000,
   });
+  const { data: fancoils = [] } = useQuery({
+    queryKey: ["fancoils"],
+    queryFn: async () => (await api.get("/fancoils")).data,
+    refetchInterval: 30000,
+  });
+  const fancoil = fancoils.find((f) => f.id === fancoilId);
 
   const [activeTab, setActiveTab] = useState("onoff");
   const [form, setForm] = useState({ hour: 7, minute: 0, value: "true", days: [1, 2, 3, 4, 5] });
 
-  // Reseta valor default quando troca de tab
   const switchTab = (key) => {
     const t = TABS.find((x) => x.key === key);
     setActiveTab(key);
@@ -107,7 +149,22 @@ export default function SchedulesPanel({ fancoilId, canEdit }) {
 
   const applyPreset = (preset) => setForm((p) => ({ ...p, days: [...preset.days] }));
 
+  const totalSlots = items.length;
+  const atLimit = totalSlots >= MAX_SLOTS;
+
+  const notifyImmediate = () => {
+    toast.message("Atenção", {
+      description:
+        "A controladora pode aplicar imediatamente o estado do horário atual (ex.: criar 'liga 07:00 / desliga 18:00' às 10:00 liga agora).",
+      icon: <Info className="w-4 h-4" />,
+    });
+  };
+
   const create = async () => {
+    if (atLimit) {
+      toast.error(`Limite de ${MAX_SLOTS} agendamentos por controladora atingido.`);
+      return;
+    }
     const action = activeTab === "onoff" ? "cmd" : activeTab === "mode" ? "estado" : "setpoint";
     try {
       await api.post("/schedules", {
@@ -120,7 +177,9 @@ export default function SchedulesPanel({ fancoilId, canEdit }) {
         enabled: true,
       });
       toast.success("Agendamento criado");
+      notifyImmediate();
       qc.invalidateQueries({ queryKey: ["schedules", fancoilId] });
+      qc.invalidateQueries({ queryKey: ["fancoils"] });
     } catch (e) {
       toast.error(formatApiError(e));
     }
@@ -130,7 +189,9 @@ export default function SchedulesPanel({ fancoilId, canEdit }) {
     try {
       await api.delete(`/schedules/${id}`);
       qc.invalidateQueries({ queryKey: ["schedules", fancoilId] });
+      qc.invalidateQueries({ queryKey: ["fancoils"] });
       toast.success("Agendamento removido");
+      notifyImmediate();
     } catch (e) {
       toast.error(formatApiError(e));
     }
@@ -140,6 +201,7 @@ export default function SchedulesPanel({ fancoilId, canEdit }) {
     try {
       await api.patch(`/schedules/${s.id}`, { enabled: !s.enabled });
       qc.invalidateQueries({ queryKey: ["schedules", fancoilId] });
+      qc.invalidateQueries({ queryKey: ["fancoils"] });
     } catch (e) {
       toast.error(formatApiError(e));
     }
@@ -159,9 +221,15 @@ export default function SchedulesPanel({ fancoilId, canEdit }) {
 
   return (
     <div className="space-y-5" data-testid="schedules-panel">
-      <h2 className="font-display text-sm uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-        <Clock className="w-4 h-4" /> Agendamentos
-      </h2>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h2 className="font-display text-sm uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+          <Clock className="w-4 h-4" /> Agendamentos
+          <span className={`font-mono text-xs ${atLimit ? "text-rose-400" : "text-slate-500"}`}>
+            ({totalSlots}/{MAX_SLOTS})
+          </span>
+        </h2>
+        <SyncBadge fancoilState={fancoil} />
+      </div>
 
       {/* Tab bar */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -267,21 +335,25 @@ export default function SchedulesPanel({ fancoilId, canEdit }) {
         })}
       </div>
 
-      {/* Formulário de novo agendamento */}
+      {/* Formulário */}
       {canEdit && (
         <div className="pt-4 mt-2 border-t border-border space-y-4">
           <div className="flex items-center gap-2">
             <CurrentIcon className={`w-5 h-5 text-${currentTab.color}-400`} />
-            <div>
+            <div className="flex-1">
               <div className="font-display text-sm font-bold uppercase tracking-wider">
                 Novo agendamento — {currentTab.label}
               </div>
               <div className="text-xs text-muted-foreground">{currentTab.description}</div>
             </div>
+            {atLimit && (
+              <span className="text-xs text-rose-400 font-semibold flex items-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5" /> Limite atingido
+              </span>
+            )}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-[auto_auto_1fr] gap-3 items-end">
-            {/* Horário */}
             <div>
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Horário</div>
               <div className="flex items-center gap-1">
@@ -303,7 +375,6 @@ export default function SchedulesPanel({ fancoilId, canEdit }) {
               </div>
             </div>
 
-            {/* Valor */}
             <div>
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
                 {activeTab === "temp" ? "Temperatura (°C)" : "Ação"}
@@ -315,9 +386,7 @@ export default function SchedulesPanel({ fancoilId, canEdit }) {
                     onClick={() => setForm({ ...form, value: "true" })}
                     data-testid="schedule-value-ligar"
                     className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-semibold border-2 ${
-                      form.value === "true"
-                        ? "bg-emerald-600 text-white border-emerald-500"
-                        : "bg-muted text-muted-foreground border-border"
+                      form.value === "true" ? "bg-emerald-600 text-white border-emerald-500" : "bg-muted text-muted-foreground border-border"
                     }`}
                   >
                     <Power className="w-4 h-4" /> Ligar
@@ -327,9 +396,7 @@ export default function SchedulesPanel({ fancoilId, canEdit }) {
                     onClick={() => setForm({ ...form, value: "false" })}
                     data-testid="schedule-value-desligar"
                     className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-semibold border-2 ${
-                      form.value === "false"
-                        ? "bg-rose-600 text-white border-rose-500"
-                        : "bg-muted text-muted-foreground border-border"
+                      form.value === "false" ? "bg-rose-600 text-white border-rose-500" : "bg-muted text-muted-foreground border-border"
                     }`}
                   >
                     <PowerOff className="w-4 h-4" /> Desligar
@@ -343,9 +410,7 @@ export default function SchedulesPanel({ fancoilId, canEdit }) {
                     onClick={() => setForm({ ...form, value: "true" })}
                     data-testid="schedule-value-auto"
                     className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-semibold border-2 ${
-                      form.value === "true"
-                        ? "bg-sky-600 text-white border-sky-500"
-                        : "bg-muted text-muted-foreground border-border"
+                      form.value === "true" ? "bg-sky-600 text-white border-sky-500" : "bg-muted text-muted-foreground border-border"
                     }`}
                   >
                     <Cog className="w-4 h-4" /> Automático
@@ -355,9 +420,7 @@ export default function SchedulesPanel({ fancoilId, canEdit }) {
                     onClick={() => setForm({ ...form, value: "false" })}
                     data-testid="schedule-value-forcado"
                     className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-semibold border-2 ${
-                      form.value === "false"
-                        ? "bg-orange-600 text-white border-orange-500"
-                        : "bg-muted text-muted-foreground border-border"
+                      form.value === "false" ? "bg-orange-600 text-white border-orange-500" : "bg-muted text-muted-foreground border-border"
                     }`}
                   >
                     <Hand className="w-4 h-4" /> Forçado
@@ -378,9 +441,9 @@ export default function SchedulesPanel({ fancoilId, canEdit }) {
               )}
             </div>
 
-            {/* Botão criar */}
             <Button
               onClick={create}
+              disabled={atLimit || form.days.length === 0}
               data-testid="schedule-create-button"
               className="w-full lg:w-auto bg-sky-600 hover:bg-sky-500"
             >
@@ -388,7 +451,6 @@ export default function SchedulesPanel({ fancoilId, canEdit }) {
             </Button>
           </div>
 
-          {/* Dias */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Dias da semana</div>

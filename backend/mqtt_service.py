@@ -50,6 +50,32 @@ class FancoilState:
         self.pressure: Optional[float] = None  # % — supervisório envia via PRESSAO/SET
         self.last_update: Optional[str] = None
         self.last_change_ts: float = time.time()
+        # Schedule sync tracking (comparar o que o BMS enviou vs o que a controladora aplicou)
+        self.schedule_sent_payload: Optional[str] = None   # último payload que publicamos em SCHEDULE/SET
+        self.schedule_sent_at: Optional[str] = None
+        self.schedule_applied_payload: Optional[str] = None  # último retido em SCHEDULE/STATE
+        self.schedule_applied_at: Optional[str] = None
+
+    def _norm_schedule(self, payload: Optional[str]) -> set:
+        """Normaliza payload de agenda para comparação (ignora IDX e espaços)."""
+        if not payload:
+            return set()
+        out = set()
+        for ln in payload.strip().splitlines():
+            parts = ln.strip().split(";")
+            if len(parts) < 6:
+                continue
+            # ignora IDX ([0]) para comparar — compara (HH:MM, DIAS, ACAO, VALOR, EN)
+            key = (parts[1].strip(), parts[2].strip(), parts[3].strip().upper(), parts[4].strip().lower(), parts[5].strip())
+            out.add(key)
+        return out
+
+    @property
+    def schedule_in_sync(self) -> Optional[bool]:
+        """True se o payload enviado bate com o aplicado. None se nunca enviamos."""
+        if self.schedule_sent_payload is None:
+            return None
+        return self._norm_schedule(self.schedule_sent_payload) == self._norm_schedule(self.schedule_applied_payload)
 
     def to_dict(self) -> dict:
         return {
@@ -65,6 +91,9 @@ class FancoilState:
             "vag": self.vag,
             "pressure": self.pressure,
             "last_update": self.last_update,
+            "schedule_sent_at": self.schedule_sent_at,
+            "schedule_applied_at": self.schedule_applied_at,
+            "schedule_in_sync": self.schedule_in_sync,
         }
 
 
@@ -464,6 +493,11 @@ class MQTTService:
                     st.online = True
             except ValueError:
                 pass
+        elif var in ("SCHEDULE/STATE", "SCHEDULE"):
+            # Confirmação de agenda aplicada pela controladora
+            st.schedule_applied_payload = payload
+            st.schedule_applied_at = now_iso()
+            st.online = True
         else:
             changed = False
 
@@ -592,6 +626,10 @@ class MQTTService:
                 idx += 1
         payload = "\n".join(lines)
         topic = f"{self.topic_prefix}/{device_id}/SCHEDULE/SET"
+        # Rastrear o payload enviado para confronto com SCHEDULE/STATE (retained)
+        st = self.get_state(device_id)
+        st.schedule_sent_payload = payload
+        st.schedule_sent_at = now_iso()
         if self._client and self.connected:
             try:
                 self._client.publish(topic, payload, qos=1, retain=True)
@@ -600,6 +638,11 @@ class MQTTService:
                 logger.exception("[schedule] falha ao publicar")
         else:
             logger.warning("[schedule] MQTT desconectado, config não enviada (%s)", topic)
+        # Notifica a UI
+        try:
+            await manager.broadcast("telemetry", {"device_id": device_id, "state": st.to_dict()})
+        except Exception:
+            pass
         return {"topic": topic, "payload": payload, "count": len(lines)}
 
     async def _cmd_timeout(self, log_id, device_id: str, var: str):

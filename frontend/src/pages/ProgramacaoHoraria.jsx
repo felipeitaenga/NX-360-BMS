@@ -8,7 +8,7 @@ import { Input } from "../components/ui/input";
 import {
   Clock, Wind, ChevronDown, ChevronRight, Globe2,
   Power, PowerOff, Hand, Cog, Thermometer, Plus,
-  AlertTriangle, CheckCircle2,
+  AlertTriangle, CheckCircle2, Info, WifiOff, Zap,
 } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -84,6 +84,11 @@ function BulkScheduleCard({ visibleFancoils, onCreated }) {
         toast.warning(`${res.data.skipped_count} fancoil(s) ignorado(s) — veja o console`);
         console.warn("[prog geral] skipped:", res.data.skipped);
       }
+      toast.message("Atenção", {
+        description:
+          "A controladora pode aplicar imediatamente o estado do horário atual.",
+        icon: <Info className="w-4 h-4" />,
+      });
       setConfirmOpen(false);
       onCreated?.();
     } catch (e) {
@@ -334,6 +339,48 @@ function BulkScheduleCard({ visibleFancoils, onCreated }) {
   );
 }
 
+/* --------- Banner: fancoils online sem agenda --------- */
+function OnlineWithoutScheduleBanner() {
+  const { data = [] } = useQuery({
+    queryKey: ["schedules-health"],
+    queryFn: async () => (await api.get("/schedules/health/online-sem-agenda")).data,
+    refetchInterval: 30000,
+  });
+  if (!data.length) return null;
+  return (
+    <Card
+      data-testid="online-without-schedule-banner"
+      className="p-4 border-2 border-amber-500/60 bg-amber-500/5"
+    >
+      <div className="flex items-start gap-3">
+        <div className="p-2 rounded-lg bg-amber-500/20 text-amber-300">
+          <WifiOff className="w-5 h-5" />
+        </div>
+        <div className="flex-1">
+          <div className="font-display font-bold text-sm uppercase tracking-wider text-amber-200 mb-1">
+            {data.length} controladora(s) online sem agenda
+          </div>
+          <div className="text-xs text-muted-foreground mb-2">
+            As controladoras abaixo estão conectadas, mas <b>ainda não têm nenhum agendamento cadastrado</b>.
+            Elas vão operar só pelos comandos manuais / modo automático até você adicionar uma programação.
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {data.map((f) => (
+              <span
+                key={f.fancoil_id}
+                data-testid={`online-no-sched-${f.name.toLowerCase()}`}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded border border-amber-500/40 bg-amber-500/10 text-amber-100 text-xs font-mono"
+              >
+                <Zap className="w-3 h-3" /> {f.name} ({f.device_id})
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 /* --------- Página --------- */
 export default function ProgramacaoHoraria() {
   const { user } = useAuth();
@@ -373,6 +420,8 @@ export default function ProgramacaoHoraria() {
       </div>
 
       {canCommand && <BulkScheduleCard visibleFancoils={visibleFancoils} onCreated={onBulkCreated} />}
+
+      <OnlineWithoutScheduleBanner />
 
       <div className="flex items-center gap-3">
         <Input

@@ -50,6 +50,23 @@ Aplicativo web em pt-BR para automação predial. Começou focado em HVAC (fanco
 ## Credenciais
 Ver `/app/memory/test_credentials.md` (admin: felipejferreira@gmail.com / @Pilares1)
 
+## Novidades (06/10/2026 — v3: contrato ESP32 oficial)
+Firmware pronto (não mexer). Backend/UI alinhados ao protocolo:
+- **Validações**: máx. **10 slots por controladora**, setpoint **10–35 °C** (backend + UI); UI desabilita "Adicionar" ao atingir limite e mostra `(X/10)` no cabeçalho.
+- **Novo endpoint** `POST /api/schedules/copy` {from_fancoil_id, to_fancoil_id, replace} — copia agendas para um ID novo (troca de placa/MAC) e re-publica `SCHEDULE/SET` no destino.
+- **Novo endpoint** `GET /api/schedules/health/online-sem-agenda` — lista controladoras `ONLINE=1` sem nenhum slot cadastrado.
+- **Banner amarelo** na página Programação Horária lista essas controladoras com nome/ID.
+- **Fancoil novo**: `POST /api/fancoils` agora publica retained em `SCHEDULE/SET` logo após cadastro — permite preparar a agenda antes de ligar o equipamento.
+- **Troca de device_id**: `PATCH /api/fancoils/{id}` com `device_id` novo → limpa retained do ID antigo (`""`) e re-publica no ID novo.
+- **Sync badge** no cabeçalho de cada SchedulesPanel comparando o payload enviado vs `SCHEDULE/STATE` retido pela controladora:
+  - "Sincronizado" (verde) — payload bate com STATE.
+  - "Aguardando confirmação" (âmbar) — enviado mas controladora ainda não ecoou.
+  - "Sem agenda publicada" — nunca enviamos nada (ou agenda ficou vazia).
+- **FancoilState** agora exporta `schedule_sent_at`, `schedule_applied_at`, `schedule_in_sync` (comparação normalizada ignora IDX).
+- **Handler `SCHEDULE/STATE`** no MQTT → atualiza `schedule_applied_payload`, dispara WS para a UI reagir sem refresh.
+- **Toast "Atenção"** após criar/remover schedule explicando que a controladora aplica imediatamente o estado do horário atual.
+- Agenda só com slots **enabled=true** (desabilitados não vão para o payload do ESP32).
+
 ## Novidades (06/10/2026 — v2: UX menu + Programação Horária na controladora)
 - **Mapa de Calor**: escala **fixa 10–30 °C** (independe dos valores correntes).
 - **Trocar senha pelo próprio usuário**: botão "Trocar senha" na sidebar desktop + drawer mobile → `/trocar-senha` (endpoint já existia).
