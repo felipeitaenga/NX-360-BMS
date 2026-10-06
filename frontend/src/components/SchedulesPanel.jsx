@@ -3,21 +3,84 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, formatApiError } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "../components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Clock, Plus, Trash2 } from "lucide-react";
+import {
+  Power, PowerOff, Hand, Cog, Thermometer, Plus, Trash2, Clock,
+} from "lucide-react";
 
 const DAYS = [
-  { v: 0, lbl: "Dom" }, { v: 1, lbl: "Seg" }, { v: 2, lbl: "Ter" },
-  { v: 3, lbl: "Qua" }, { v: 4, lbl: "Qui" }, { v: 5, lbl: "Sex" }, { v: 6, lbl: "Sáb" },
+  { v: 1, short: "Seg", full: "Segunda" },
+  { v: 2, short: "Ter", full: "Terça" },
+  { v: 3, short: "Qua", full: "Quarta" },
+  { v: 4, short: "Qui", full: "Quinta" },
+  { v: 5, short: "Sex", full: "Sexta" },
+  { v: 6, short: "Sáb", full: "Sábado" },
+  { v: 0, short: "Dom", full: "Domingo" },
 ];
 
+const PRESETS = [
+  { id: "weekdays", label: "Dias úteis", days: [1, 2, 3, 4, 5] },
+  { id: "weekend", label: "Fim de semana", days: [0, 6] },
+  { id: "all", label: "Todos os dias", days: [0, 1, 2, 3, 4, 5, 6] },
+];
+
+/* --------- Tabs (tipos de agendamento) ---------- */
+const TABS = [
+  {
+    key: "onoff",
+    label: "Ligar / Desligar",
+    icon: Power,
+    color: "emerald",
+    description: "Programa o fancoil para ligar ou desligar automaticamente.",
+    defaultValue: "true",
+  },
+  {
+    key: "mode",
+    label: "Modo (Auto / Forçado)",
+    icon: Cog,
+    color: "sky",
+    description: "Alterna o modo da controladora entre Automático (segue setpoint) e Forçado (segue comando manual).",
+    defaultValue: "true",
+  },
+  {
+    key: "temp",
+    label: "Temperatura (Setpoint)",
+    icon: Thermometer,
+    color: "amber",
+    description: "Agenda a mudança do setpoint de temperatura (10 a 35 °C).",
+    defaultValue: "22",
+  },
+];
+
+// Mapeia backend action/value → tab visual
+function tabOf(action) {
+  if (action === "cmd") return "onoff";
+  if (action === "estado") return "mode";
+  return "temp";
+}
+
+function friendlyAction(action, value) {
+  const v = String(value).toLowerCase();
+  if (action === "cmd") return v === "true" ? { label: "Ligar o ar-condicionado", Icon: Power, color: "text-emerald-400" }
+                                             : { label: "Desligar o ar-condicionado", Icon: PowerOff, color: "text-rose-400" };
+  if (action === "estado") return v === "true" ? { label: "Modo Automático", Icon: Cog, color: "text-sky-400" }
+                                                : { label: "Modo Forçado (manual)", Icon: Hand, color: "text-orange-400" };
+  return { label: `Temperatura ${value}°C`, Icon: Thermometer, color: "text-amber-400" };
+}
+
+function describeDays(days) {
+  if (!days || days.length === 0 || days.length === 7) return "Todos os dias";
+  const preset = PRESETS.find((p) => p.days.length === days.length && p.days.every((d) => days.includes(d)));
+  if (preset) return preset.label;
+  return DAYS.filter((d) => days.includes(d.v)).map((d) => d.short).join(" · ");
+}
+
+/* ---------- Component ---------- */
 export default function SchedulesPanel({ fancoilId, canEdit }) {
   const qc = useQueryClient();
   const { data: items = [] } = useQuery({
@@ -25,19 +88,37 @@ export default function SchedulesPanel({ fancoilId, canEdit }) {
     queryFn: async () => (await api.get(`/schedules/${fancoilId}`)).data,
     refetchInterval: 60000,
   });
-  const [form, setForm] = useState({
-    hour: 7, minute: 0, action: "cmd", value: "true", days: [1, 2, 3, 4, 5],
-  });
+
+  const [activeTab, setActiveTab] = useState("onoff");
+  const [form, setForm] = useState({ hour: 7, minute: 0, value: "true", days: [1, 2, 3, 4, 5] });
+
+  // Reseta valor default quando troca de tab
+  const switchTab = (key) => {
+    const t = TABS.find((x) => x.key === key);
+    setActiveTab(key);
+    setForm((p) => ({ ...p, value: t.defaultValue, hour: key === "onoff" ? (p.value === "false" ? 18 : 7) : p.hour }));
+  };
 
   const toggleDay = (d) =>
     setForm((p) => ({
       ...p,
-      days: p.days.includes(d) ? p.days.filter((x) => x !== d) : [...p.days, d],
+      days: p.days.includes(d) ? p.days.filter((x) => x !== d) : [...p.days, d].sort(),
     }));
 
+  const applyPreset = (preset) => setForm((p) => ({ ...p, days: [...preset.days] }));
+
   const create = async () => {
+    const action = activeTab === "onoff" ? "cmd" : activeTab === "mode" ? "estado" : "setpoint";
     try {
-      await api.post("/schedules", { fancoil_id: fancoilId, ...form, value: String(form.value) });
+      await api.post("/schedules", {
+        fancoil_id: fancoilId,
+        hour: form.hour,
+        minute: form.minute,
+        action,
+        value: String(form.value),
+        days: form.days,
+        enabled: true,
+      });
       toast.success("Agendamento criado");
       qc.invalidateQueries({ queryKey: ["schedules", fancoilId] });
     } catch (e) {
@@ -64,145 +145,291 @@ export default function SchedulesPanel({ fancoilId, canEdit }) {
     }
   };
 
-  const describeAction = (a) => {
-    if (a === "estado") return "ESTADO";
-    if (a === "cmd") return "CMD";
-    return "SETPOINT";
-  };
+  const grouped = useMemo(() => {
+    const g = { onoff: [], mode: [], temp: [] };
+    items.forEach((s) => g[tabOf(s.action)].push(s));
+    Object.keys(g).forEach((k) =>
+      g[k].sort((a, b) => a.hour * 60 + a.minute - (b.hour * 60 + b.minute))
+    );
+    return g;
+  }, [items]);
+
+  const currentTab = TABS.find((t) => t.key === activeTab);
+  const CurrentIcon = currentTab.icon;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="font-display text-sm uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-          <Clock className="w-4 h-4" /> Agendamentos
-        </h2>
+    <div className="space-y-5" data-testid="schedules-panel">
+      <h2 className="font-display text-sm uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+        <Clock className="w-4 h-4" /> Agendamentos
+      </h2>
+
+      {/* Tab bar */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        {TABS.map((t) => {
+          const Icon = t.icon;
+          const active = activeTab === t.key;
+          const count = grouped[t.key].length;
+          const ring = {
+            emerald: active ? "border-emerald-400 bg-emerald-500/10 text-emerald-200" : "border-border hover:border-emerald-400/40",
+            sky: active ? "border-sky-400 bg-sky-500/10 text-sky-200" : "border-border hover:border-sky-400/40",
+            amber: active ? "border-amber-400 bg-amber-500/10 text-amber-200" : "border-border hover:border-amber-400/40",
+          }[t.color];
+          return (
+            <button
+              key={t.key}
+              onClick={() => switchTab(t.key)}
+              data-testid={`sched-tab-${t.key}`}
+              className={`flex items-center justify-between gap-2 p-3 rounded-lg border-2 transition-all text-left ${ring}`}
+            >
+              <div className="flex items-center gap-2">
+                <Icon className="w-5 h-5" strokeWidth={1.75} />
+                <div>
+                  <div className="font-display font-bold text-sm">{t.label}</div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    {count} agendamento{count === 1 ? "" : "s"}
+                  </div>
+                </div>
+              </div>
+            </button>
+          );
+        })}
       </div>
 
-      {items.length === 0 && (
-        <div className="text-xs text-muted-foreground font-mono italic p-3 border border-dashed border-border rounded">
-          Nenhum agendamento. Use o formulário abaixo para programar comandos recorrentes.
-        </div>
-      )}
-
+      {/* Lista do tab atual */}
       <div className="space-y-2">
-        {items.map((s) => (
-          <div
-            key={s.id}
-            data-testid={`schedule-row-${s.id}`}
-            className="flex items-center gap-3 p-3 rounded border border-border bg-card/60"
-          >
-            <div className="font-display text-xl font-black w-16 text-sky-400">
-              {String(s.hour).padStart(2, "0")}:{String(s.minute).padStart(2, "0")}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-mono uppercase tracking-wider">
-                {describeAction(s.action)} = <b>{s.value}</b>
-              </div>
-              <div className="text-[10px] text-muted-foreground font-mono">
-                {s.days.length === 0 || s.days.length === 7
-                  ? "Todos os dias"
-                  : DAYS.filter((d) => s.days.includes(d.v)).map((d) => d.lbl).join(" · ")}
-                {s.last_run && ` · últ.: ${new Date(s.last_run).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`}
-              </div>
-            </div>
-            {canEdit && (
-              <>
-                <Switch checked={s.enabled} onCheckedChange={() => toggle(s)} data-testid={`schedule-toggle-${s.id}`} />
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button size="icon" variant="outline" data-testid={`schedule-remove-${s.id}`}>
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Remover agendamento?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Esta ação remove o agendamento {String(s.hour).padStart(2, "0")}:{String(s.minute).padStart(2, "0")} ({s.action}={s.value}).
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                      <AlertDialogAction data-testid={`schedule-remove-confirm-${s.id}`} onClick={() => remove(s.id)}>
-                        Remover
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </>
-            )}
+        {grouped[activeTab].length === 0 && (
+          <div className="text-xs text-muted-foreground italic p-4 border border-dashed border-border rounded-lg text-center">
+            Nenhum agendamento de <b>{currentTab.label}</b> configurado. Use o formulário abaixo para criar.
           </div>
-        ))}
-      </div>
-
-      {canEdit && (
-        <div className="pt-4 mt-4 border-t border-border space-y-3">
-          <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Novo agendamento</div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-            <div>
-              <Label className="text-[10px] uppercase">Hora</Label>
-              <Input type="number" min={0} max={23} value={form.hour}
-                     onChange={(e) => setForm({ ...form, hour: parseInt(e.target.value || 0) })}
-                     data-testid="schedule-hour" />
-            </div>
-            <div>
-              <Label className="text-[10px] uppercase">Minuto</Label>
-              <Input type="number" min={0} max={59} value={form.minute}
-                     onChange={(e) => setForm({ ...form, minute: parseInt(e.target.value || 0) })}
-                     data-testid="schedule-minute" />
-            </div>
-            <div>
-              <Label className="text-[10px] uppercase">Ação</Label>
-              <Select value={form.action}
-                      onValueChange={(v) => setForm({ ...form, action: v, value: v === "setpoint" ? "22" : "true" })}>
-                <SelectTrigger data-testid="schedule-action"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="estado">ESTADO (AUTO/Forçado)</SelectItem>
-                  <SelectItem value="cmd">CMD (Ligar/Desligar)</SelectItem>
-                  <SelectItem value="setpoint">SETPOINT (°C)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-[10px] uppercase">Valor</Label>
-              {form.action === "setpoint" ? (
-                <Input type="number" step="0.5" value={form.value}
-                       onChange={(e) => setForm({ ...form, value: e.target.value })}
-                       data-testid="schedule-value-number" />
-              ) : (
-                <Select value={form.value} onValueChange={(v) => setForm({ ...form, value: v })}>
-                  <SelectTrigger data-testid="schedule-value-select"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="true">{form.action === "estado" ? "AUTOMÁTICO" : "LIGAR"}</SelectItem>
-                    <SelectItem value="false">{form.action === "estado" ? "FORÇADO" : "DESLIGAR"}</SelectItem>
-                  </SelectContent>
-                </Select>
+        )}
+        {grouped[activeTab].map((s) => {
+          const f = friendlyAction(s.action, s.value);
+          const Ico = f.Icon;
+          return (
+            <div
+              key={s.id}
+              data-testid={`schedule-row-${s.id}`}
+              className={`flex items-center gap-3 p-3 lg:p-4 rounded-lg border bg-card/50 ${
+                s.enabled ? "border-border" : "border-border/40 opacity-60"
+              }`}
+            >
+              <div className="font-display text-2xl font-black w-20 text-sky-400 tabular-nums">
+                {String(s.hour).padStart(2, "0")}:{String(s.minute).padStart(2, "0")}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className={`flex items-center gap-2 font-semibold text-sm ${f.color}`}>
+                  <Ico className="w-4 h-4" strokeWidth={2} />
+                  <span>{f.label}</span>
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {describeDays(s.days)}
+                  {s.last_run && (
+                    <> · últ.: {new Date(s.last_run).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</>
+                  )}
+                </div>
+              </div>
+              {canEdit && (
+                <>
+                  <Switch
+                    checked={s.enabled}
+                    onCheckedChange={() => toggle(s)}
+                    data-testid={`schedule-toggle-${s.id}`}
+                  />
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button size="icon" variant="outline" data-testid={`schedule-remove-${s.id}`}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Remover agendamento?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Esta ação remove o agendamento das {String(s.hour).padStart(2, "0")}:
+                          {String(s.minute).padStart(2, "0")} — {f.label}.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction
+                          data-testid={`schedule-remove-confirm-${s.id}`}
+                          onClick={() => remove(s.id)}
+                        >
+                          Remover
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </>
               )}
             </div>
-          </div>
-          <div>
-            <Label className="text-[10px] uppercase">Dias</Label>
-            <div className="flex flex-wrap gap-1 mt-1">
-              {DAYS.map((d) => (
-                <button
-                  key={d.v}
-                  type="button"
-                  onClick={() => toggleDay(d.v)}
-                  data-testid={`schedule-day-${d.v}`}
-                  className={`px-3 py-1 rounded text-xs font-mono uppercase border ${
-                    form.days.includes(d.v)
-                      ? "bg-sky-600 text-white border-sky-500"
-                      : "bg-muted text-muted-foreground border-border"
-                  }`}
-                >
-                  {d.lbl}
-                </button>
-              ))}
+          );
+        })}
+      </div>
+
+      {/* Formulário de novo agendamento */}
+      {canEdit && (
+        <div className="pt-4 mt-2 border-t border-border space-y-4">
+          <div className="flex items-center gap-2">
+            <CurrentIcon className={`w-5 h-5 text-${currentTab.color}-400`} />
+            <div>
+              <div className="font-display text-sm font-bold uppercase tracking-wider">
+                Novo agendamento — {currentTab.label}
+              </div>
+              <div className="text-xs text-muted-foreground">{currentTab.description}</div>
             </div>
           </div>
-          <Button onClick={create} data-testid="schedule-create-button" className="w-full">
-            <Plus className="w-4 h-4 mr-2" /> Adicionar agendamento
-          </Button>
+
+          <div className="grid grid-cols-1 lg:grid-cols-[auto_auto_1fr] gap-3 items-end">
+            {/* Horário */}
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Horário</div>
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number" min={0} max={23}
+                  value={form.hour}
+                  onChange={(e) => setForm({ ...form, hour: Math.min(23, Math.max(0, parseInt(e.target.value || 0))) })}
+                  className="w-16 text-center font-display text-lg font-black tabular-nums"
+                  data-testid="schedule-hour"
+                />
+                <span className="font-display text-2xl font-black text-sky-400">:</span>
+                <Input
+                  type="number" min={0} max={59}
+                  value={form.minute}
+                  onChange={(e) => setForm({ ...form, minute: Math.min(59, Math.max(0, parseInt(e.target.value || 0))) })}
+                  className="w-16 text-center font-display text-lg font-black tabular-nums"
+                  data-testid="schedule-minute"
+                />
+              </div>
+            </div>
+
+            {/* Valor */}
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                {activeTab === "temp" ? "Temperatura (°C)" : "Ação"}
+              </div>
+              {activeTab === "onoff" && (
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, value: "true" })}
+                    data-testid="schedule-value-ligar"
+                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-semibold border-2 ${
+                      form.value === "true"
+                        ? "bg-emerald-600 text-white border-emerald-500"
+                        : "bg-muted text-muted-foreground border-border"
+                    }`}
+                  >
+                    <Power className="w-4 h-4" /> Ligar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, value: "false" })}
+                    data-testid="schedule-value-desligar"
+                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-semibold border-2 ${
+                      form.value === "false"
+                        ? "bg-rose-600 text-white border-rose-500"
+                        : "bg-muted text-muted-foreground border-border"
+                    }`}
+                  >
+                    <PowerOff className="w-4 h-4" /> Desligar
+                  </button>
+                </div>
+              )}
+              {activeTab === "mode" && (
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, value: "true" })}
+                    data-testid="schedule-value-auto"
+                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-semibold border-2 ${
+                      form.value === "true"
+                        ? "bg-sky-600 text-white border-sky-500"
+                        : "bg-muted text-muted-foreground border-border"
+                    }`}
+                  >
+                    <Cog className="w-4 h-4" /> Automático
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, value: "false" })}
+                    data-testid="schedule-value-forcado"
+                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-semibold border-2 ${
+                      form.value === "false"
+                        ? "bg-orange-600 text-white border-orange-500"
+                        : "bg-muted text-muted-foreground border-border"
+                    }`}
+                  >
+                    <Hand className="w-4 h-4" /> Forçado
+                  </button>
+                </div>
+              )}
+              {activeTab === "temp" && (
+                <div className="flex items-center gap-1">
+                  <Input
+                    type="number" min={10} max={35} step="0.5"
+                    value={form.value}
+                    onChange={(e) => setForm({ ...form, value: e.target.value })}
+                    className="w-24 text-center font-display text-lg font-black tabular-nums"
+                    data-testid="schedule-value-temp"
+                  />
+                  <span className="font-display text-xl font-black text-amber-400">°C</span>
+                </div>
+              )}
+            </div>
+
+            {/* Botão criar */}
+            <Button
+              onClick={create}
+              data-testid="schedule-create-button"
+              className="w-full lg:w-auto bg-sky-600 hover:bg-sky-500"
+            >
+              <Plus className="w-4 h-4 mr-2" /> Adicionar
+            </Button>
+          </div>
+
+          {/* Dias */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Dias da semana</div>
+              <div className="flex gap-1">
+                {PRESETS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => applyPreset(p)}
+                    data-testid={`schedule-preset-${p.id}`}
+                    className="text-[10px] uppercase tracking-wider px-2 py-1 rounded border border-border hover:border-sky-400 text-muted-foreground hover:text-sky-300"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {DAYS.map((d) => {
+                const sel = form.days.includes(d.v);
+                const weekend = d.v === 0 || d.v === 6;
+                return (
+                  <button
+                    key={d.v}
+                    type="button"
+                    onClick={() => toggleDay(d.v)}
+                    data-testid={`schedule-day-${d.v}`}
+                    className={`py-2 rounded font-mono text-xs uppercase tracking-wider border-2 transition-all ${
+                      sel
+                        ? "bg-sky-600 text-white border-sky-500 font-bold"
+                        : weekend
+                        ? "bg-muted/40 text-muted-foreground/70 border-border"
+                        : "bg-muted text-muted-foreground border-border hover:border-sky-400/40"
+                    }`}
+                  >
+                    {d.short}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
     </div>
