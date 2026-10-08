@@ -74,12 +74,17 @@ export default function FancoilSchematicSVG({
           <rect x="2" y="18" width="14" height="1.5" fill="#38bdf8" opacity="0.9" />
         </pattern>
 
-        {/* Serpentina: aletas verticais finas + hue dinâmico */}
-        <pattern id="coilFins" width="8" height="24" patternUnits="userSpaceOnUse">
-          <rect width="8" height="24" fill={coilHue} fillOpacity={coilAlpha * 0.35} />
-          <line x1="2" y1="0" x2="2" y2="24" stroke={coilHue} strokeOpacity={coilAlpha} strokeWidth="1" />
-          <line x1="5" y1="0" x2="5" y2="24" stroke={coilHue} strokeOpacity={coilAlpha} strokeWidth="1" />
+        {/* Serpentina: aletas verticais sempre visíveis + glow dinâmico */}
+        <pattern id="coilFins" width="7" height="24" patternUnits="userSpaceOnUse">
+          <rect width="7" height="24" fill="#1e293b" />
+          <line x1="1.5" y1="0" x2="1.5" y2="24" stroke="#475569" strokeOpacity="0.9" strokeWidth="1" />
+          <line x1="4.5" y1="0" x2="4.5" y2="24" stroke="#475569" strokeOpacity="0.9" strokeWidth="1" />
         </pattern>
+        {/* Overlay de "água fria" na serpentina — intensidade segue a VAG */}
+        <linearGradient id="coilWater" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#38bdf8" stopOpacity={coilAlpha} />
+          <stop offset="100%" stopColor="#0ea5e9" stopOpacity={coilAlpha * 0.7} />
+        </linearGradient>
 
         {/* Filtro G4 */}
         <pattern id="filterZZ" width="12" height="24" patternUnits="userSpaceOnUse">
@@ -153,14 +158,34 @@ export default function FancoilSchematicSVG({
         <rect x="212" y="146" width="42" height="138" rx="2" fill="url(#filterZZ)" stroke="#64748b" strokeWidth="1.5" />
       </g>
 
-      {/* ===== SERPENTINA (aletas + gotas) ===== */}
+      {/* ===== SERPENTINA (aletas + tubos horizontais + gotas) ===== */}
       <g>
+        {/* Base: aletas verticais SEMPRE visíveis (estrutura) */}
         <rect x="268" y="146" width="160" height="138" rx="2" fill="url(#coilFins)"
-              stroke={coilHue} strokeOpacity={0.3 + 0.5 * (vagPct / 100)} strokeWidth="1.5" />
-        {/* Gotículas (visíveis conforme VAG) */}
+              stroke="#64748b" strokeWidth="1.5" />
+        {/* Overlay azul = água circulando (intensidade pela VAG) */}
+        <rect x="268" y="146" width="160" height="138" rx="2" fill="url(#coilWater)" />
+        {/* Tubos (serpentinados) horizontais — SEMPRE visíveis */}
+        {[158, 180, 202, 224, 246, 268].map((y, i) => (
+          <g key={y}>
+            <path
+              d={
+                i % 2 === 0
+                  ? `M 272 ${y} L 418 ${y} Q 428 ${y} 428 ${y + 11} L 428 ${y + 11}`
+                  : `M 428 ${y} L 272 ${y} Q 268 ${y} 268 ${y - 11}`
+              }
+              stroke="#0ea5e9"
+              strokeOpacity={0.4 + 0.5 * (vagPct / 100)}
+              strokeWidth="2.2"
+              fill="none"
+              strokeLinecap="round"
+            />
+          </g>
+        ))}
+        {/* Gotículas: aparecem quando VAG > 0 */}
         {drops.map((d, i) =>
           d.visible ? (
-            <circle key={i} cx={d.x} cy={d.y} r={d.r} fill="#38bdf8" opacity="0.9">
+            <circle key={i} cx={d.x} cy={d.y} r={d.r} fill="#7dd3fc" opacity="0.95">
               {wet && (
                 <animate
                   attributeName="cy"
@@ -176,42 +201,65 @@ export default function FancoilSchematicSVG({
         {/* Bandeja de dreno */}
         <rect x="268" y="283" width="160" height="7" fill="url(#drainMetal)" stroke="#64748b" strokeWidth="1" />
         <path d="M 330 290 L 330 304 L 352 304" stroke="#475569" strokeWidth="4" fill="none" />
-        {/* Tubos de alimentação para a serpentina (continuação do AG RET/AG ALIM) */}
+        {/* Tubos verticais de alimentação (sempre visíveis) */}
         <path d="M 410 115 L 410 146" stroke="#38bdf8" strokeWidth="6" fill="none" />
         <path d="M 440 115 L 440 146" stroke="#f43f5e" strokeWidth="6" fill="none" opacity="0.9" />
       </g>
 
-      {/* ===== VENTILADOR centrífugo com voluta ===== */}
+      {/* ===== VENTILADOR CENTRÍFUGO (voluta + rotor interno) ===== */}
       <g transform="translate(540 215)">
-        {running && <circle r="80" fill="url(#fanGlow)" />}
-        {/* Voluta (scroll) do ventilador */}
-        <path d="M 60 -40 Q 95 20 30 65 L 30 68 L -5 68 Q -60 68 -60 10 Q -60 -58 10 -58 Q 48 -58 60 -40 Z"
-              fill="#0f172a" stroke="#334155" strokeWidth="2" />
-        {/* Rotor */}
-        <circle r="48" fill="#020617" stroke="#334155" strokeWidth="1.5" />
-        <circle r="44" fill="none" stroke="#1e293b" strokeWidth="1" strokeDasharray="1 3" />
-        <g className={running ? "fan-rotate" : ""} style={{ transformOrigin: "0 0" }}>
-          {Array.from({ length: 18 }).map((_, idx) => {
-            const angle = (idx * 360) / 18;
+        {running && <circle r="78" fill="url(#fanGlow)" />}
+
+        {/* Voluta / scroll housing — gabinete em espiral */}
+        <path
+          d="M -58 -56 Q -62 -62 -54 -62 L 56 -62 Q 72 -58 72 -14 L 72 24 Q 72 36 60 42 L 64 60 Q 66 68 58 68 L -32 68 Q -58 68 -70 48 Q -82 20 -74 -14 Q -70 -36 -58 -56 Z"
+          fill="#0f172a"
+          stroke="#475569"
+          strokeWidth="2"
+          strokeLinejoin="round"
+        />
+        {/* Saída de ar (parafusada ao gabinete) */}
+        <rect x="60" y="36" width="18" height="24" fill="#1e293b" stroke="#475569" strokeWidth="1.5" />
+
+        {/* Carcaça interna circular do rotor */}
+        <circle r="46" fill="#020617" stroke="#334155" strokeWidth="1.5" />
+        <circle r="43" fill="none" stroke="#1e293b" strokeWidth="1" strokeDasharray="2 4" />
+
+        {/* Pás curvadas (centrifugal forward-curved) */}
+        <g className={running ? "fan-rotate" : ""} style={{ transformOrigin: "0px 0px" }}>
+          {Array.from({ length: 14 }).map((_, idx) => {
+            const angle = (idx * 360) / 14;
             return (
               <path
                 key={idx}
-                d="M 0 -14 L 2 -40 Q 8 -42 10 -38 L 6 -14 Z"
+                d="M 0 -18 Q 12 -32 10 -42 Q 2 -42 -4 -34 Q -4 -26 0 -18 Z"
                 fill="#38bdf8"
-                opacity={running ? 0.85 : 0.4}
+                opacity={running ? 0.9 : 0.5}
                 transform={`rotate(${angle})`}
               />
             );
           })}
-          <circle r="8" fill="#0f172a" stroke="#38bdf8" strokeWidth="2" />
-          <circle r="3" fill="#38bdf8" />
+          {/* Hub central */}
+          <circle r="9" fill="#0f172a" stroke="#38bdf8" strokeWidth="2" />
+          <circle r="4" fill="#38bdf8" />
+          <circle r="1.5" fill="#0f172a" />
         </g>
-        {/* Motor "M" */}
-        <g transform="translate(0 80)">
-          <rect x="-14" y="-10" width="28" height="20" rx="3" fill="#1e293b" stroke="#64748b" strokeWidth="1.5" />
-          <text y="4" textAnchor="middle" fontSize="12" fontWeight="900"
+
+        {/* Pontos de parafuso do gabinete */}
+        {[[-50, -46], [50, -46], [-56, 50], [50, 50]].map(([x, y], i) => (
+          <circle key={i} cx={x} cy={y} r="2" fill="#334155" stroke="#64748b" strokeWidth="0.6" />
+        ))}
+
+        {/* Motor "M" acoplado abaixo */}
+        <g transform="translate(0 86)">
+          <rect x="-18" y="-12" width="36" height="24" rx="4" fill="#1e293b" stroke="#64748b" strokeWidth="1.5" />
+          <circle cx="-11" cy="0" r="1.2" fill="#64748b" />
+          <circle cx="11" cy="0" r="1.2" fill="#64748b" />
+          <text y="5" textAnchor="middle" fontSize="14" fontWeight="900"
                 fill={running ? "#10b981" : "#64748b"} className="font-mono">M</text>
         </g>
+        {/* Eixo motor → rotor */}
+        <line x1="0" y1="46" x2="0" y2="74" stroke="#475569" strokeWidth="2" />
       </g>
 
       {/* ===== INSUFLAMENTO (grelha azul) ===== */}
