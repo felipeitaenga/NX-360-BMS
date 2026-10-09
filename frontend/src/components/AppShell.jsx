@@ -9,6 +9,7 @@ import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { useSound } from "../context/SoundContext";
 import { useTelemetry } from "../context/TelemetryContext";
+import { useAppVersion } from "../hooks/useAppVersion";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 
@@ -50,6 +51,7 @@ export default function AppShell({ children }) {
   const { theme, toggle } = useTheme();
   const { enabled: soundEnabled, toggle: toggleSound } = useSound();
   const { alarmsBump } = useTelemetry();
+  const version = useAppVersion();
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -218,6 +220,16 @@ export default function AppShell({ children }) {
               Sair
             </button>
           </div>
+          {version && (
+            <div
+              data-testid="app-version-footer"
+              title={version.codename ? `${version.codename} • ${version.build_date}` : version.build_date}
+              className="mt-3 pt-2 border-t border-slate-800/80 text-center text-[10px] font-mono text-slate-500 tracking-wider"
+            >
+              NX-360 BMS v{version.version}
+              <span className="hidden xl:inline"> • {version.build_date}</span>
+            </div>
+          )}
         </div>
       </aside>
 

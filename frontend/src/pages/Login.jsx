@@ -7,9 +7,11 @@ import { Label } from "../components/ui/label";
 import { Card } from "../components/ui/card";
 import { Wind, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+import { useAppVersion } from "../hooks/useAppVersion";
 
 export default function Login() {
   const { login } = useAuth();
+  const version = useAppVersion();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
@@ -98,6 +100,11 @@ export default function Login() {
 
         <div className="mt-6 pt-6 border-t border-slate-800 text-center text-xs text-slate-500 font-mono uppercase tracking-widest">
           Sistema de Automação Predial
+          {version && (
+            <div data-testid="login-version" className="mt-1 text-[10px] text-slate-600 normal-case tracking-wider">
+              v{version.version} • {version.build_date}
+            </div>
+          )}
         </div>
       </Card>
     </div>
