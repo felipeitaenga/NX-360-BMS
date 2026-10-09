@@ -1,326 +1,307 @@
-import React from "react";
+import React, { useId } from "react";
 
 /**
- * FancoilSchematicSVG v3 — Representação lateral mais rica do fancoil.
- * Cores da serpentina reagem à abertura da VAG (0% = seco/escuro, 100% = cheio/vívido).
- * Setores: retorno (grelha laranja), filtro G4 (zigzag), serpentina (aletas + gotas),
- * ventilador centrífugo com motor "M", insuflamento (grelha azul).
- * Tubos AG RET (quente) / AG ALIM (fria) chegam pelo topo passando pela válvula VAG.
+ * FancoilSchematicSVG v3 — corte técnico de fancoil (estilo supervisório BMS).
+ *
+ * Fluxo: RETORNO → FILTRO → SERPENTINA (água gelada + VAG) → VENTILADOR CENTRÍFUGO → INSUFLAMENTO
+ *
+ * Animações (somente quando faz sentido):
+ *  - Partículas de ar atravessam a máquina: laranja (ar quente) até a serpentina, azul (ar frio) depois dela.
+ *  - Rotor centrífugo gira quando `running`.
+ *  - Água gelada circula nos tubos com velocidade proporcional à abertura da VAG.
+ *  - Gotas de condensado caem na bandeja quando há ventilação + VAG aberta.
+ *  - Respeita `prefers-reduced-motion`.
+ *
+ * Props (inalteradas): running, temperature, setpoint, vag, tempError
  */
-export default function FancoilSchematicSVG({
-  running,
-  temperature,          // T RETORNO (ambiente)
-  supplyTemp,           // T INSUFL. (opcional — se não tiver, mostra --)
-  setpoint,
-  vag,                  // 0..100 %
-  tempError,
-}) {
-  const vagPct = Math.max(0, Math.min(100, Number(vag) || 0));
-  const wet = running && vagPct > 0;
-  // Intensidade da serpentina: 0 → cinza; 100 → cyan vívido
-  const coilAlpha = 0.15 + 0.75 * (vagPct / 100);
-  // Cor da serpentina transiciona de cinza para cyan conforme VAG
-  const coilHue = wet ? "#38bdf8" : "#64748b";
-  const dropCount = Math.round((vagPct / 100) * 24); // nº de gotículas visíveis
+export default function FancoilSchematicSVG({ running, temperature, setpoint, vag, tempError }) {
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
+  const id = (n) => `fc${uid}-${n}`;
 
-  // Jitter determinístico para gotículas (padrão repetível)
-  const drops = [];
-  for (let i = 0; i < 24; i++) {
-    const col = i % 4;
-    const row = Math.floor(i / 4);
-    drops.push({
-      x: 282 + col * 32 + ((i * 17) % 8),
-      y: 128 + row * 14 + ((i * 11) % 6),
-      r: 2.2 + ((i * 7) % 10) / 15,
-      delay: (i * 0.17) % 2.4,
-      visible: i < dropCount,
-    });
-  }
+  const vagPct = vag != null && !Number.isNaN(vag) ? Math.max(0, Math.min(100, vag)) : null;
+  const waterOn = vagPct != null && vagPct > 1;
+  const condensate = running && waterOn && vagPct > 5;
+  // 100% → 0.5s por ciclo; 5% → ~2.4s
+  const waterDur = waterOn ? `${Math.max(0.5, 2.5 - vagPct / 50).toFixed(2)}s` : "0s";
+  const coilOpacity = waterOn ? 0.25 + (vagPct / 100) * 0.55 : 0.12;
+
+  const delta = temperature != null && setpoint != null && !tempError ? temperature - setpoint : null;
+  const deltaColor = delta == null ? "#94a3b8" : Math.abs(delta) <= 1 ? "#10b981" : delta > 0 ? "#f97316" : "#38bdf8";
+
+  const WARM = "#fb923c";
+  const COOL = "#38bdf8";
+  const WATER = "#0ea5e9";
+  const muted = { stroke: "currentColor", strokeOpacity: 0.35 };
+
+  // Partículas: [y, delay(s), raio]
+  const particles = [
+    [150, 0.0, 3], [176, 1.1, 2.5], [200, 0.5, 3], [224, 1.7, 2.5], [244, 0.9, 2],
+    [162, 2.3, 2], [212, 2.9, 2.5], [188, 3.4, 2], [236, 3.9, 3], [170, 4.4, 2.5],
+  ];
 
   return (
     <svg
-      viewBox="0 0 880 360"
-      className="w-full h-auto"
+      viewBox="0 0 900 360"
+      className="w-full h-auto select-none"
       role="img"
-      aria-label="Esquema do fancoil"
+      aria-label={`Esquema do fancoil — ${running ? "operando" : "parado"}`}
       data-testid="fancoil-schematic"
     >
+      <style>{`
+        .${id("spin")} { transform-box: fill-box; transform-origin: center; animation: ${id("rot")} .55s linear infinite; }
+        .${id("air")} { animation: ${id("move")} 4.8s linear infinite; }
+        .${id("water")} { stroke-dasharray: 10 8; animation: ${id("flow")} ${waterDur} linear infinite; }
+        .${id("waterR")} { stroke-dasharray: 10 8; animation: ${id("flowR")} ${waterDur} linear infinite; }
+        .${id("drop")} { animation: ${id("fall")} 1.4s ease-in infinite; }
+        .${id("pulse")} { animation: ${id("blink")} 1.6s ease-in-out infinite; }
+        @keyframes ${id("rot")} { to { transform: rotate(360deg); } }
+        @keyframes ${id("move")} {
+          0% { transform: translateX(0); opacity: 0; }
+          6% { opacity: .95; }
+          92% { opacity: .95; }
+          100% { transform: translateX(850px); opacity: 0; }
+        }
+        @keyframes ${id("flow")} { to { stroke-dashoffset: -36; } }
+        @keyframes ${id("flowR")} { to { stroke-dashoffset: 36; } }
+        @keyframes ${id("fall")} {
+          0% { transform: translateY(0); opacity: 0; }
+          15% { opacity: .9; }
+          100% { transform: translateY(22px); opacity: 0; }
+        }
+        @keyframes ${id("blink")} { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+        @media (prefers-reduced-motion: reduce) {
+          .${id("spin")}, .${id("air")}, .${id("water")}, .${id("waterR")}, .${id("drop")}, .${id("pulse")} { animation: none !important; }
+        }
+      `}</style>
+
       <defs>
-        {/* Casing com perspectiva */}
-        <linearGradient id="cabinet" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#1e293b" />
-          <stop offset="40%" stopColor="#0f172a" />
-          <stop offset="100%" stopColor="#020617" />
+        <linearGradient id={id("cabinet")} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#94a3b8" stopOpacity="0.16" />
+          <stop offset="1" stopColor="#94a3b8" stopOpacity="0.04" />
         </linearGradient>
-        <linearGradient id="cabinetEdge" x1="0" x2="1">
-          <stop offset="0%" stopColor="#334155" />
-          <stop offset="50%" stopColor="#64748b" />
-          <stop offset="100%" stopColor="#334155" />
+        <linearGradient id={id("ductIn")} x1="0" x2="1">
+          <stop offset="0" stopColor={WARM} stopOpacity="0" />
+          <stop offset="1" stopColor={WARM} stopOpacity={running ? 0.18 : 0.06} />
         </linearGradient>
-
-        {/* Grelhas */}
-        <pattern id="returnGrille" width="18" height="20" patternUnits="userSpaceOnUse">
-          <rect width="18" height="20" fill="#7c2d12" />
-          <rect x="2" y="3" width="14" height="2" fill="#ea580c" opacity="0.85" />
-          <rect x="2" y="8" width="14" height="2" fill="#ea580c" opacity="0.85" />
-          <rect x="2" y="13" width="14" height="2" fill="#ea580c" opacity="0.85" />
-          <rect x="2" y="18" width="14" height="1.5" fill="#ea580c" opacity="0.85" />
-        </pattern>
-        <pattern id="supplyGrille" width="18" height="20" patternUnits="userSpaceOnUse">
-          <rect width="18" height="20" fill="#082f49" />
-          <rect x="2" y="3" width="14" height="2" fill="#38bdf8" opacity="0.9" />
-          <rect x="2" y="8" width="14" height="2" fill="#38bdf8" opacity="0.9" />
-          <rect x="2" y="13" width="14" height="2" fill="#38bdf8" opacity="0.9" />
-          <rect x="2" y="18" width="14" height="1.5" fill="#38bdf8" opacity="0.9" />
-        </pattern>
-
-        {/* Serpentina: aletas verticais sempre visíveis + glow dinâmico */}
-        <pattern id="coilFins" width="7" height="24" patternUnits="userSpaceOnUse">
-          <rect width="7" height="24" fill="#1e293b" />
-          <line x1="1.5" y1="0" x2="1.5" y2="24" stroke="#475569" strokeOpacity="0.9" strokeWidth="1" />
-          <line x1="4.5" y1="0" x2="4.5" y2="24" stroke="#475569" strokeOpacity="0.9" strokeWidth="1" />
-        </pattern>
-        {/* Overlay de "água fria" na serpentina — intensidade segue a VAG */}
-        <linearGradient id="coilWater" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#38bdf8" stopOpacity={coilAlpha} />
-          <stop offset="100%" stopColor="#0ea5e9" stopOpacity={coilAlpha * 0.7} />
+        <linearGradient id={id("ductOut")} x1="0" x2="1">
+          <stop offset="0" stopColor={COOL} stopOpacity={running ? 0.22 : 0.06} />
+          <stop offset="1" stopColor={COOL} stopOpacity="0" />
         </linearGradient>
-
-        {/* Filtro G4 */}
-        <pattern id="filterZZ" width="12" height="24" patternUnits="userSpaceOnUse">
-          <path d="M0 24 L6 0 L12 24" stroke="#94a3b8" strokeWidth="1.3" fill="none" />
-        </pattern>
-
-        {/* Glow do ventilador */}
-        <radialGradient id="fanGlow">
-          <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.35" />
-          <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
+        <linearGradient id={id("coilFill")} x1="0" x2="1">
+          <stop offset="0" stopColor={waterOn ? WATER : "#64748b"} stopOpacity={coilOpacity * 0.6} />
+          <stop offset="1" stopColor={waterOn ? WATER : "#64748b"} stopOpacity={coilOpacity} />
+        </linearGradient>
+        <radialGradient id={id("fanGlow")}>
+          <stop offset="0" stopColor={COOL} stopOpacity="0.35" />
+          <stop offset="1" stopColor={COOL} stopOpacity="0" />
         </radialGradient>
-
-        {/* Dreno da bandeja */}
-        <linearGradient id="drainMetal" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stopColor="#475569" />
-          <stop offset="1" stopColor="#1e293b" />
-        </linearGradient>
+        {/* ar quente: antes do centro da serpentina; ar frio: depois */}
+        <clipPath id={id("warmZone")}><rect x="0" y="0" width="300" height="360" /></clipPath>
+        <clipPath id={id("coolZone")}><rect x="300" y="0" width="600" height="360" /></clipPath>
+        <clipPath id={id("airway")}><rect x="20" y="138" width="870" height="116" /></clipPath>
       </defs>
 
-      {/* ===== Tubulação hidráulica (topo) ===== */}
-      {/* AG RET (quente) — volta de água quente, sobe à direita da serpentina */}
-      <g>
-        <path d="M 230 20 L 230 70 Q 230 86 246 86 L 440 86 L 440 115"
-              stroke="#f43f5e" strokeWidth="7" fill="none" strokeLinejoin="round" />
-        <text x="230" y="14" textAnchor="middle" fontSize="11" fontWeight="800"
-              fill="#f43f5e" className="font-mono tracking-wider">AG RET</text>
-      </g>
-      {/* AG ALIM (fria) — alimentação de água gelada, entra pela válvula VAG */}
-      <g>
-        <path d="M 410 20 L 410 115" stroke="#38bdf8" strokeWidth="7" fill="none" />
-        <text x="410" y="14" textAnchor="middle" fontSize="11" fontWeight="800"
-              fill="#38bdf8" className="font-mono tracking-wider">AG ALIM</text>
-      </g>
+      {/* ================= DUTOS ================= */}
+      {/* Retorno */}
+      <path d="M 20 138 H 150 V 254 H 20" fill={`url(#${id("ductIn")})`} {...muted} strokeWidth="2" />
+      {/* Insuflamento */}
+      <path d="M 890 138 H 770 V 254 H 890" fill={`url(#${id("ductOut")})`} {...muted} strokeWidth="2" />
 
-      {/* Válvula VAG — mostra abertura % */}
-      <g transform="translate(410 100)">
-        <rect x="-18" y="-6" width="36" height="12" rx="2" fill="#0f172a" stroke="#38bdf8" strokeWidth="1.5" />
-        <rect x="-14" y="-3" width={28 * (vagPct / 100)} height="6" fill="#38bdf8" opacity={vagPct > 0 ? 0.9 : 0.3} />
-      </g>
-      <g transform="translate(470 100)">
-        <rect x="-28" y="-18" width="56" height="36" rx="4" fill="hsl(var(--card))" stroke="#38bdf8" strokeWidth="1.5" />
-        <text x="0" y="-4" textAnchor="middle" fontSize="9" fill="#38bdf8" opacity="0.8" className="font-mono tracking-widest">VAG</text>
-        <text x="0" y="12" textAnchor="middle" fontSize="14" fontWeight="900"
-              fill={vagPct > 0 ? "#38bdf8" : "#64748b"} className="font-mono">
-          {vag != null ? `${vagPct.toFixed(0)}%` : "--"}
-        </text>
-      </g>
+      {/* ================= GABINETE ================= */}
+      <rect x="150" y="118" width="620" height="156" rx="8" fill={`url(#${id("cabinet")})`} stroke="currentColor" strokeOpacity="0.55" strokeWidth="2.5" />
+      {/* divisórias de seção */}
+      {[215, 365, 640].map((x) => (
+        <line key={x} x1={x} y1="122" x2={x} y2="270" stroke="currentColor" strokeOpacity="0.15" strokeDasharray="3 5" />
+      ))}
 
-      {/* ===== Gabinete ===== */}
-      <rect x="30" y="130" width="820" height="170" rx="14" fill="url(#cabinet)" stroke="url(#cabinetEdge)" strokeWidth="2" />
-      {/* Linha de perspectiva */}
-      <path d="M 44 130 L 60 118 L 836 118 L 850 130" fill="url(#cabinetEdge)" opacity="0.4" />
-      <path d="M 850 130 L 836 118 L 836 288 L 850 300 Z" fill="#0f172a" opacity="0.5" />
-
-      {/* ===== RETORNO (grelha laranja) ===== */}
-      <g>
-        <rect x="48" y="146" width="150" height="138" rx="4" fill="url(#returnGrille)" stroke="#9a3412" strokeWidth="1.5" />
-        {running && (
-          <g stroke="#fdba74" strokeWidth="2.5" fill="none" opacity="0.6" strokeLinecap="round">
-            {[160, 185, 210, 235, 260].map((y, i) => (
-              <path key={y} d={`M 60 ${y} h 120`} strokeDasharray="4 10">
-                <animate attributeName="stroke-dashoffset" from="14" to="0" dur={`${0.7 + i * 0.15}s`} repeatCount="indefinite" />
-              </path>
-            ))}
-          </g>
-        )}
-      </g>
-
-      {/* ===== FILTRO G4 (zigzag) ===== */}
-      <g>
-        <rect x="212" y="146" width="42" height="138" rx="2" fill="url(#filterZZ)" stroke="#64748b" strokeWidth="1.5" />
-      </g>
-
-      {/* ===== SERPENTINA (aletas + tubos horizontais + gotas) ===== */}
-      <g>
-        {/* Base: aletas verticais SEMPRE visíveis (estrutura) */}
-        <rect x="268" y="146" width="160" height="138" rx="2" fill="url(#coilFins)"
-              stroke="#64748b" strokeWidth="1.5" />
-        {/* Overlay azul = água circulando (intensidade pela VAG) */}
-        <rect x="268" y="146" width="160" height="138" rx="2" fill="url(#coilWater)" />
-        {/* Tubos (serpentinados) horizontais — SEMPRE visíveis */}
-        {[158, 180, 202, 224, 246, 268].map((y, i) => (
-          <g key={y}>
-            <path
-              d={
-                i % 2 === 0
-                  ? `M 272 ${y} L 418 ${y} Q 428 ${y} 428 ${y + 11} L 428 ${y + 11}`
-                  : `M 428 ${y} L 272 ${y} Q 268 ${y} 268 ${y - 11}`
-              }
-              stroke="#0ea5e9"
-              strokeOpacity={0.4 + 0.5 * (vagPct / 100)}
-              strokeWidth="2.2"
-              fill="none"
-              strokeLinecap="round"
-            />
-          </g>
-        ))}
-        {/* Gotículas: aparecem quando VAG > 0 */}
-        {drops.map((d, i) =>
-          d.visible ? (
-            <circle key={i} cx={d.x} cy={d.y} r={d.r} fill="#7dd3fc" opacity="0.95">
-              {wet && (
-                <animate
-                  attributeName="cy"
-                  values={`${d.y};${d.y + 10};${d.y}`}
-                  dur={`${2.4 + d.delay}s`}
-                  begin={`${d.delay}s`}
-                  repeatCount="indefinite"
+      {/* ================= PARTÍCULAS DE AR ================= */}
+      {running && (
+        <g clipPath={`url(#${id("airway")})`}>
+          {[["warmZone", WARM], ["coolZone", COOL]].map(([zone, color]) => (
+            <g key={zone} clipPath={`url(#${id(zone)})`}>
+              {particles.map(([y, delay, r], i) => (
+                <circle
+                  key={i}
+                  className={id("air")}
+                  cx="30"
+                  cy={y}
+                  r={r}
+                  fill={color}
+                  style={{ animationDelay: `-${delay}s` }}
                 />
-              )}
-            </circle>
-          ) : null
-        )}
-        {/* Bandeja de dreno */}
-        <rect x="268" y="283" width="160" height="7" fill="url(#drainMetal)" stroke="#64748b" strokeWidth="1" />
-        <path d="M 330 290 L 330 304 L 352 304" stroke="#475569" strokeWidth="4" fill="none" />
-        {/* Tubos verticais de alimentação (sempre visíveis) */}
-        <path d="M 410 115 L 410 146" stroke="#38bdf8" strokeWidth="6" fill="none" />
-        <path d="M 440 115 L 440 146" stroke="#f43f5e" strokeWidth="6" fill="none" opacity="0.9" />
+              ))}
+            </g>
+          ))}
+        </g>
+      )}
+
+      {/* ================= GRELHA DE RETORNO ================= */}
+      <g>
+        {[148, 166, 184, 202, 220, 238].map((y) => (
+          <line key={y} x1="152" y1={y} x2="166" y2={y + 8} stroke="currentColor" strokeOpacity="0.45" strokeWidth="2" strokeLinecap="round" />
+        ))}
       </g>
 
-      {/* ===== VENTILADOR CENTRÍFUGO (voluta + rotor interno) ===== */}
-      <g transform="translate(540 215)">
-        {running && <circle r="78" fill="url(#fanGlow)" />}
-
-        {/* Voluta / scroll housing — gabinete em espiral */}
-        <path
-          d="M -58 -56 Q -62 -62 -54 -62 L 56 -62 Q 72 -58 72 -14 L 72 24 Q 72 36 60 42 L 64 60 Q 66 68 58 68 L -32 68 Q -58 68 -70 48 Q -82 20 -74 -14 Q -70 -36 -58 -56 Z"
-          fill="#0f172a"
-          stroke="#475569"
-          strokeWidth="2"
+      {/* ================= FILTRO (plissado) ================= */}
+      <g>
+        <rect x="182" y="132" width="24" height="128" rx="2" fill="#94a3b8" fillOpacity="0.08" stroke="#94a3b8" strokeOpacity="0.7" strokeWidth="1.5" />
+        <polyline
+          points={Array.from({ length: 17 }, (_, i) => `${i % 2 ? 202 : 186},${134 + i * 7.5}`).join(" ")}
+          fill="none"
+          stroke="#94a3b8"
+          strokeOpacity="0.8"
+          strokeWidth="1.3"
           strokeLinejoin="round"
         />
-        {/* Saída de ar (parafusada ao gabinete) */}
-        <rect x="60" y="36" width="18" height="24" fill="#1e293b" stroke="#475569" strokeWidth="1.5" />
-
-        {/* Carcaça interna circular do rotor */}
-        <circle r="46" fill="#020617" stroke="#334155" strokeWidth="1.5" />
-        <circle r="43" fill="none" stroke="#1e293b" strokeWidth="1" strokeDasharray="2 4" />
-
-        {/* Pás curvadas (centrifugal forward-curved) */}
-        <g className={running ? "fan-rotate" : ""} style={{ transformOrigin: "0px 0px" }}>
-          {Array.from({ length: 14 }).map((_, idx) => {
-            const angle = (idx * 360) / 14;
-            return (
-              <path
-                key={idx}
-                d="M 0 -18 Q 12 -32 10 -42 Q 2 -42 -4 -34 Q -4 -26 0 -18 Z"
-                fill="#38bdf8"
-                opacity={running ? 0.9 : 0.5}
-                transform={`rotate(${angle})`}
-              />
-            );
-          })}
-          {/* Hub central */}
-          <circle r="9" fill="#0f172a" stroke="#38bdf8" strokeWidth="2" />
-          <circle r="4" fill="#38bdf8" />
-          <circle r="1.5" fill="#0f172a" />
-        </g>
-
-        {/* Pontos de parafuso do gabinete */}
-        {[[-50, -46], [50, -46], [-56, 50], [50, 50]].map(([x, y], i) => (
-          <circle key={i} cx={x} cy={y} r="2" fill="#334155" stroke="#64748b" strokeWidth="0.6" />
-        ))}
-
-        {/* Motor "M" acoplado abaixo */}
-        <g transform="translate(0 86)">
-          <rect x="-18" y="-12" width="36" height="24" rx="4" fill="#1e293b" stroke="#64748b" strokeWidth="1.5" />
-          <circle cx="-11" cy="0" r="1.2" fill="#64748b" />
-          <circle cx="11" cy="0" r="1.2" fill="#64748b" />
-          <text y="5" textAnchor="middle" fontSize="14" fontWeight="900"
-                fill={running ? "#10b981" : "#64748b"} className="font-mono">M</text>
-        </g>
-        {/* Eixo motor → rotor */}
-        <line x1="0" y1="46" x2="0" y2="74" stroke="#475569" strokeWidth="2" />
       </g>
 
-      {/* ===== INSUFLAMENTO (grelha azul) ===== */}
+      {/* ================= SERPENTINA ================= */}
       <g>
-        <rect x="660" y="146" width="180" height="138" rx="4" fill="url(#supplyGrille)" stroke="#0369a1" strokeWidth="1.5" />
-        {running && (
-          <g stroke="#7dd3fc" strokeWidth="2.5" fill="none" opacity="0.7" strokeLinecap="round">
-            {[160, 185, 210, 235, 260].map((y, i) => (
-              <path key={y} d={`M 672 ${y} h 158`} strokeDasharray="6 10">
-                <animate attributeName="stroke-dashoffset" from="0" to="-16" dur={`${0.6 + i * 0.1}s`} repeatCount="indefinite" />
-              </path>
-            ))}
-          </g>
-        )}
+        <rect x="236" y="132" width="110" height="122" rx="3" fill={`url(#${id("coilFill")})`} stroke={waterOn ? WATER : "#64748b"} strokeOpacity="0.8" strokeWidth="1.5" />
+        {/* aletas */}
+        {Array.from({ length: 21 }, (_, i) => 241 + i * 5).map((x) => (
+          <line key={x} x1={x} y1="134" x2={x} y2="252" stroke={waterOn ? WATER : "#64748b"} strokeOpacity="0.28" strokeWidth="1" />
+        ))}
+        {/* tubos (passes) */}
+        {[148, 172, 196, 220, 244].map((y) => (
+          <line key={y} x1="252" y1={y} x2="330" y2={y} stroke="#cbd5e1" strokeOpacity="0.55" strokeWidth="3" strokeLinecap="round" />
+        ))}
+        {/* curvas de retorno dos tubos */}
+        {[148, 196].map((y) => (
+          <path key={`r${y}`} d={`M 330 ${y} a 12 12 0 0 1 0 24`} fill="none" stroke="#cbd5e1" strokeOpacity="0.55" strokeWidth="3" />
+        ))}
+        {[172, 220].map((y) => (
+          <path key={`l${y}`} d={`M 252 ${y} a 12 12 0 0 0 0 24`} fill="none" stroke="#cbd5e1" strokeOpacity="0.55" strokeWidth="3" />
+        ))}
+        {/* bandeja de condensado */}
+        <path d="M 230 262 L 236 270 H 346 L 352 262" fill={WATER} fillOpacity="0.12" stroke="currentColor" strokeOpacity="0.45" strokeWidth="1.5" />
+        {condensate &&
+          [256, 288, 320].map((x, i) => (
+            <path
+              key={x}
+              className={id("drop")}
+              d={`M ${x} 252 q 3 5 0 7 q -3 -2 0 -7 z`}
+              fill={WATER}
+              style={{ animationDelay: `${i * 0.45}s` }}
+            />
+          ))}
       </g>
 
-      {/* ===== Rótulos dos setores ===== */}
-      <g fontSize="10" className="font-mono tracking-wider" fill="currentColor" opacity="0.7">
-        <text x="123" y="320" textAnchor="middle">RETORNO</text>
-        <text x="233" y="320" textAnchor="middle">FILTRO</text>
-        <text x="348" y="320" textAnchor="middle" fontWeight="700" fill="#38bdf8" opacity={0.5 + 0.5 * (vagPct / 100)}>
-          SERPENTINA
-        </text>
-        <text x="348" y="334" textAnchor="middle" fontSize="8" opacity="0.5">BANDEJA DRENO</text>
-        <text x="540" y="320" textAnchor="middle">VENTILADOR</text>
-        <text x="540" y="334" textAnchor="middle" fontSize="8" fontWeight="700"
-              fill={running ? "#10b981" : "#64748b"} opacity="0.9">
-          {running ? "LIGADO" : "DESLIGADO"}
-        </text>
-        <text x="750" y="320" textAnchor="middle">INSUFLAMENTO</text>
+      {/* ================= ÁGUA GELADA + VAG ================= */}
+      <g>
+        {/* Alimentação (AG) — desce até a serpentina */}
+        <path d="M 262 20 V 132" fill="none" stroke={WATER} strokeOpacity="0.25" strokeWidth="9" strokeLinecap="round" />
+        <path d="M 262 20 V 132" fill="none" stroke={WATER} strokeWidth="3.5" className={waterOn ? id("water") : undefined} strokeOpacity={waterOn ? 1 : 0.35} />
+        {/* Retorno (RAG) — sobe da serpentina */}
+        <path d="M 322 20 V 132" fill="none" stroke="#7dd3fc" strokeOpacity="0.2" strokeWidth="9" strokeLinecap="round" />
+        <path d="M 322 20 V 132" fill="none" stroke="#7dd3fc" strokeWidth="3.5" className={waterOn ? id("waterR") : undefined} strokeOpacity={waterOn ? 0.9 : 0.3} />
+        <text x="262" y="14" textAnchor="middle" fontSize="12" fill="currentColor" opacity="0.6" className="font-mono">AG</text>
+        <text x="322" y="14" textAnchor="middle" fontSize="12" fill="currentColor" opacity="0.6" className="font-mono">RAG</text>
+
+        {/* Válvula 2 vias (símbolo gravata) + atuador */}
+        <g transform="translate(262 82)">
+          <path d="M -13 -10 L 13 10 L 13 -10 L -13 10 Z" fill="hsl(var(--card))" stroke={waterOn ? WATER : "#64748b"} strokeWidth="2" strokeLinejoin="round" />
+          <line x1="0" y1="0" x2="-26" y2="0" stroke={waterOn ? WATER : "#64748b"} strokeWidth="2" />
+          <rect x="-50" y="-11" width="24" height="22" rx="3" fill="hsl(var(--card))" stroke={waterOn ? WATER : "#64748b"} strokeWidth="2" />
+          <text x="-38" y="4" textAnchor="middle" fontSize="10" fontWeight="700" fill={waterOn ? WATER : "#64748b"} className="font-mono">M</text>
+        </g>
+        {/* Indicador de abertura da VAG */}
+        <g transform="translate(130 64)">
+          <rect x="-46" y="-20" width="92" height="40" rx="6" fill="hsl(var(--card))" stroke={waterOn ? WATER : "#64748b"} strokeWidth="1.5" />
+          <text x="0" y="-5" textAnchor="middle" fontSize="10" fill="currentColor" opacity="0.6" className="font-mono">VAG</text>
+          <text x="0" y="12" textAnchor="middle" fontSize="15" fontWeight="800" fill={waterOn ? WATER : "#94a3b8"} className="font-mono">
+            {vagPct != null ? `${vagPct.toFixed(0)}%` : "--"}
+          </text>
+          {/* barra de abertura */}
+          <rect x="-40" y="22" width="80" height="4" rx="2" fill="currentColor" opacity="0.12" />
+          <rect x="-40" y="22" width={vagPct != null ? (80 * vagPct) / 100 : 0} height="4" rx="2" fill={WATER} />
+          <line x1="46" y1="0" x2="86" y2="18" stroke="currentColor" strokeOpacity="0.25" strokeDasharray="2 3" />
+        </g>
       </g>
 
-      {/* ===== Badges flutuantes (topo) ===== */}
-      {/* T RETORNO */}
-      <g transform="translate(100 48)">
-        <rect x="-56" y="-18" width="112" height="36" rx="6"
-              fill="hsl(var(--card))" stroke={tempError ? "#ef4444" : "#f97316"} strokeWidth="2" />
-        <text x="0" y="-3" textAnchor="middle" fontSize="9" fill="#f97316" opacity="0.9" className="font-mono tracking-widest">T RETORNO</text>
-        <text x="0" y="13" textAnchor="middle" fontSize="14" fontWeight="900"
-              fill={tempError ? "#ef4444" : "#f97316"} className="font-mono">
+      {/* ================= VENTILADOR CENTRÍFUGO ================= */}
+      <g transform="translate(500 196)">
+        {running && <circle r="92" fill={`url(#${id("fanGlow")})`} />}
+        {/* voluta (carcaça em espiral) com boca de descarga à direita */}
+        <path
+          d="M 70 -58 L 128 -58 L 128 -24 L 66 -24 A 66 66 0 1 1 6 -66 A 70 70 0 0 1 70 -58 Z"
+          fill="hsl(var(--card))"
+          stroke="currentColor"
+          strokeOpacity="0.55"
+          strokeWidth="2.5"
+          strokeLinejoin="round"
+        />
+        {/* rotor */}
+        <g className={running ? id("spin") : undefined}>
+          <circle r="46" fill="none" stroke={COOL} strokeOpacity={running ? 0.5 : 0.25} strokeWidth="1.5" />
+          {Array.from({ length: 16 }, (_, i) => i * 22.5).map((a) => (
+            <path
+              key={a}
+              d="M 24 0 Q 36 -6 45 -14"
+              fill="none"
+              stroke={COOL}
+              strokeOpacity={running ? 0.95 : 0.4}
+              strokeWidth="3"
+              strokeLinecap="round"
+              transform={`rotate(${a})`}
+            />
+          ))}
+          <circle r="24" fill="none" stroke={COOL} strokeOpacity={running ? 0.6 : 0.3} strokeWidth="1.5" />
+          <circle r="9" fill="hsl(var(--card))" stroke={COOL} strokeWidth="2" />
+          <circle r="3" fill={COOL} />
+        </g>
+      </g>
+
+      {/* ================= GRELHA DE INSUFLAMENTO ================= */}
+      <g>
+        {[148, 166, 184, 202, 220, 238].map((y) => (
+          <line key={y} x1="754" y1={y + 8} x2="768" y2={y} stroke="currentColor" strokeOpacity="0.45" strokeWidth="2" strokeLinecap="round" />
+        ))}
+      </g>
+
+      {/* ================= LEITURAS ================= */}
+      {/* Temperatura (retorno) */}
+      <g transform="translate(85 300)">
+        <rect x="-68" y="-22" width="136" height="44" rx="8" fill={tempError ? "#ef4444" : "hsl(var(--card))"} stroke={tempError ? "#ef4444" : WARM} strokeWidth="2" />
+        <text x="0" y="-6" textAnchor="middle" fontSize="10" fill={tempError ? "#fff" : "currentColor"} opacity="0.7" className="font-mono">TEMP. RETORNO</text>
+        <text x="0" y="13" textAnchor="middle" fontSize="17" fontWeight="800" fill={tempError ? "#fff" : WARM} className="font-mono">
           {tempError ? "SENSOR ERRO" : temperature != null ? `${temperature.toFixed(1)} °C` : "--"}
         </text>
       </g>
 
-      {/* T INSUFL. */}
-      <g transform="translate(680 48)">
-        <rect x="-56" y="-18" width="112" height="36" rx="6"
-              fill="hsl(var(--card))" stroke="#38bdf8" strokeWidth="2" />
-        <text x="0" y="-3" textAnchor="middle" fontSize="9" fill="#38bdf8" opacity="0.9" className="font-mono tracking-widest">T INSUFL.</text>
-        <text x="0" y="13" textAnchor="middle" fontSize="14" fontWeight="900" fill="#38bdf8" className="font-mono">
-          {supplyTemp != null ? `${Number(supplyTemp).toFixed(1)} °C` : "--.- °C"}
+      {/* Setpoint + desvio */}
+      <g transform="translate(815 300)">
+        <rect x="-68" y="-22" width="136" height="44" rx="8" fill="hsl(var(--card))" stroke="#10b981" strokeWidth="2" />
+        <text x="0" y="-6" textAnchor="middle" fontSize="10" fill="currentColor" opacity="0.7" className="font-mono">SETPOINT</text>
+        <text x="0" y="13" textAnchor="middle" fontSize="17" fontWeight="800" fill="#10b981" className="font-mono">
+          {setpoint != null ? `${setpoint.toFixed(1)} °C` : "--"}
         </text>
       </g>
+      {delta != null && (
+        <text x="815" y="340" textAnchor="middle" fontSize="11" fontWeight="700" fill={deltaColor} className="font-mono">
+          Δ {delta > 0 ? "+" : ""}{delta.toFixed(1)} °C
+        </text>
+      )}
 
-      {/* SETPOINT */}
-      <g transform="translate(810 48)">
-        <rect x="-56" y="-18" width="112" height="36" rx="6"
-              fill="hsl(var(--card))" stroke="#10b981" strokeWidth="2" />
-        <text x="0" y="-3" textAnchor="middle" fontSize="9" fill="#10b981" opacity="0.9" className="font-mono tracking-widest">SETPOINT</text>
-        <text x="0" y="13" textAnchor="middle" fontSize="14" fontWeight="900" fill="#10b981" className="font-mono">
-          {setpoint != null ? `${setpoint.toFixed(1)} °C` : "--.- °C"}
+      {/* Rótulos das seções */}
+      {[
+        [85, "RETORNO"],
+        [194, "FILTRO"],
+        [291, "SERPENTINA"],
+        [500, "VENTILADOR"],
+        [830, "INSUFL."],
+      ].map(([x, t]) => (
+        <text key={t} x={x} y={x === 85 || x === 830 ? 128 : 292} textAnchor="middle" fontSize="11" fill="currentColor" opacity="0.55" className="font-mono" letterSpacing="1">
+          {t}
+        </text>
+      ))}
+
+      {/* Estado geral */}
+      <g transform="translate(500 330)">
+        <rect x="-62" y="-14" width="124" height="28" rx="14" fill={running ? "#10b981" : "#64748b"} fillOpacity="0.15" stroke={running ? "#10b981" : "#64748b"} strokeWidth="1.5" />
+        <circle cx="-44" cy="0" r="5" fill={running ? "#10b981" : "#64748b"} className={running ? id("pulse") : undefined} />
+        <text x="6" y="5" textAnchor="middle" fontSize="13" fontWeight="800" fill={running ? "#10b981" : "#94a3b8"} className="font-mono" letterSpacing="1.5">
+          {running ? "OPERANDO" : "PARADO"}
         </text>
       </g>
     </svg>
