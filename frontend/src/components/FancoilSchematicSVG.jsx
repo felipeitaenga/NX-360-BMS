@@ -206,16 +206,16 @@ export default function FancoilSchematicSVG({ running, temperature, setpoint, va
           <text x="-38" y="4" textAnchor="middle" fontSize="10" fontWeight="700" fill={waterOn ? WATER : "#64748b"} className="font-mono">M</text>
         </g>
         {/* Indicador de abertura da VAG */}
-        <g transform="translate(130 64)">
-          <rect x="-46" y="-20" width="92" height="40" rx="6" fill="hsl(var(--card))" stroke={waterOn ? WATER : "#64748b"} strokeWidth="1.5" />
-          <text x="0" y="-5" textAnchor="middle" fontSize="10" fill="currentColor" opacity="0.6" className="font-mono">VAG</text>
-          <text x="0" y="12" textAnchor="middle" fontSize="15" fontWeight="800" fill={waterOn ? WATER : "#94a3b8"} className="font-mono">
+        <g transform="translate(130 60)">
+          <rect x="-58" y="-24" width="116" height="52" rx="8" fill="hsl(var(--card))" stroke={waterOn ? WATER : "#64748b"} strokeWidth="2" />
+          <text x="0" y="-7" textAnchor="middle" fontSize="12" fill="currentColor" opacity="0.7" className="font-mono">VAG</text>
+          <text x="0" y="18" textAnchor="middle" fontSize="22" fontWeight="900" fill={waterOn ? WATER : "#94a3b8"} className="font-mono">
             {vagPct != null ? `${vagPct.toFixed(0)}%` : "--"}
           </text>
           {/* barra de abertura */}
-          <rect x="-40" y="22" width="80" height="4" rx="2" fill="currentColor" opacity="0.12" />
-          <rect x="-40" y="22" width={vagPct != null ? (80 * vagPct) / 100 : 0} height="4" rx="2" fill={WATER} />
-          <line x1="46" y1="0" x2="86" y2="18" stroke="currentColor" strokeOpacity="0.25" strokeDasharray="2 3" />
+          <rect x="-50" y="32" width="100" height="5" rx="2" fill="currentColor" opacity="0.12" />
+          <rect x="-50" y="32" width={vagPct != null ? (100 * vagPct) / 100 : 0} height="5" rx="2" fill={WATER} />
+          <line x1="58" y1="0" x2="86" y2="18" stroke="currentColor" strokeOpacity="0.25" strokeDasharray="2 3" />
         </g>
       </g>
 
@@ -261,27 +261,15 @@ export default function FancoilSchematicSVG({ running, temperature, setpoint, va
 
       {/* ================= LEITURAS ================= */}
       {/* Temperatura (retorno) */}
-      <g transform="translate(85 300)">
-        <rect x="-68" y="-22" width="136" height="44" rx="8" fill={tempError ? "#ef4444" : "hsl(var(--card))"} stroke={tempError ? "#ef4444" : WARM} strokeWidth="2" />
-        <text x="0" y="-6" textAnchor="middle" fontSize="10" fill={tempError ? "#fff" : "currentColor"} opacity="0.7" className="font-mono">TEMP. RETORNO</text>
-        <text x="0" y="13" textAnchor="middle" fontSize="17" fontWeight="800" fill={tempError ? "#fff" : WARM} className="font-mono">
+      <g transform="translate(95 300)">
+        <rect x="-88" y="-28" width="176" height="56" rx="10" fill={tempError ? "#ef4444" : "hsl(var(--card))"} stroke={tempError ? "#ef4444" : WARM} strokeWidth="2.5" />
+        <text x="0" y="-8" textAnchor="middle" fontSize="12" fill={tempError ? "#fff" : "currentColor"} opacity="0.75" className="font-mono">TEMP. RETORNO</text>
+        <text x="0" y="18" textAnchor="middle" fontSize="24" fontWeight="900" fill={tempError ? "#fff" : WARM} className="font-mono">
           {tempError ? "SENSOR ERRO" : temperature != null ? `${temperature.toFixed(1)} °C` : "--"}
         </text>
       </g>
 
-      {/* Setpoint + desvio */}
-      <g transform="translate(815 300)">
-        <rect x="-68" y="-22" width="136" height="44" rx="8" fill="hsl(var(--card))" stroke="#10b981" strokeWidth="2" />
-        <text x="0" y="-6" textAnchor="middle" fontSize="10" fill="currentColor" opacity="0.7" className="font-mono">SETPOINT</text>
-        <text x="0" y="13" textAnchor="middle" fontSize="17" fontWeight="800" fill="#10b981" className="font-mono">
-          {setpoint != null ? `${setpoint.toFixed(1)} °C` : "--"}
-        </text>
-      </g>
-      {delta != null && (
-        <text x="815" y="340" textAnchor="middle" fontSize="11" fontWeight="700" fill={deltaColor} className="font-mono">
-          Δ {delta > 0 ? "+" : ""}{delta.toFixed(1)} °C
-        </text>
-      )}
+      {/* Setpoint removido do esquema — exibido no card de Comandos */}
 
       {/* Rótulos das seções */}
       {[
