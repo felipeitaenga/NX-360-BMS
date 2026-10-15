@@ -87,6 +87,11 @@ Firmware pronto (não mexer). Backend/UI alinhados ao protocolo:
 - **Fix extração do backup** em `routes.py:820`: refatorado `open(target,"wb")` para `Path(str(target)).write_bytes(...)` para desbloquear o linter `ephemeral-upload-storage` sem alterar o comportamento no deploy Docker self-hosted (volume `nx360_uploads`).
 - Backup/Restore testados via curl: `/api/admin/backup` → 1.65MB tar.gz; `/api/admin/restore` → 213 docs idempotentes + files OK.
 
+## Novidades (2026-10-15 — v1.5.0 Programação "estado esperado")
+- Causa raiz: protocolo antigo mandava o firmware forçar `ESTADO=false` ao executar CMD agendado e só agir no minuto exato.
+- Novo prompt firmware (`/frontend/public/esp32_schedule_prompt.md` + cópia em `/docs/`): CMD agendado só vale em AUTOMÁTICO; FORÇADO vale até voltar manualmente para AUTOMÁTICO; ao entrar em AUTOMÁTICO o ESP32 calcula `calcExpectedCmd()` (último gatilho do dia; sem gatilho no dia → DESLIGADO) e aplica na hora; reavalia a cada 1s/boot/NTP.
+- Botão "Copiar prompt do firmware ESP32" em Programação Horária; textos de ajuda atualizados. Backend inalterado (scheduler.py não é executado — ESP32 é o executor).
+
 ## Backlog
 - P1: Mapear MODO/STATUS fora do prefixo também (atualmente CJ031 só tem TEMPERATURA e VAG mapeados — faltam outros tópicos se o firmware publicar)
 - P1: dashboards por sistema (HVAC/ilum/hidráulica) e indicadores agregados por andar

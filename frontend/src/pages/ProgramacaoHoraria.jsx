@@ -8,7 +8,7 @@ import { Input } from "../components/ui/input";
 import {
   Clock, Wind, ChevronDown, ChevronRight, Globe2,
   Power, PowerOff, Hand, Cog, Thermometer, Plus,
-  AlertTriangle, CheckCircle2, Info, WifiOff, Zap,
+  AlertTriangle, CheckCircle2, Info, WifiOff, Zap, Copy,
 } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -16,6 +16,16 @@ import {
 } from "../components/ui/alert-dialog";
 import { toast } from "sonner";
 import SchedulesPanel from "../components/SchedulesPanel";
+
+async function copyFirmwarePrompt() {
+  try {
+    const txt = await (await fetch("/esp32_schedule_prompt.md", { cache: "no-store" })).text();
+    await navigator.clipboard.writeText(txt);
+    toast.success("Prompt do firmware copiado");
+  } catch {
+    window.open("/esp32_schedule_prompt.md", "_blank");
+  }
+}
 
 const DAYS = [
   { v: 1, short: "Seg" },
@@ -415,8 +425,12 @@ export default function ProgramacaoHoraria() {
         </h1>
         <div className="text-muted-foreground text-sm mt-1">
           A programação é <b>enviada à controladora via MQTT</b> (tópico <code className="font-mono text-xs">SCHEDULE/SET</code>, retained).
-          O ESP32 armazena e executa internamente.
+          O ESP32 armazena e executa internamente. Em <b>Automático</b> o fancoil segue a programação;
+          em <b>Forçado</b> segue apenas o comando manual até voltar para Automático.
         </div>
+        <Button variant="outline" size="sm" className="mt-3 gap-2" onClick={copyFirmwarePrompt} data-testid="copy-firmware-prompt-btn">
+          <Copy className="w-4 h-4" /> Copiar prompt do firmware ESP32
+        </Button>
       </div>
 
       {canCommand && <BulkScheduleCard visibleFancoils={visibleFancoils} onCreated={onBulkCreated} />}

@@ -39,7 +39,7 @@ const TABS = [
     label: "Ligar / Desligar",
     icon: Power,
     color: "emerald",
-    description: "Programa o fancoil para ligar ou desligar automaticamente.",
+    description: "Define os períodos ligado/desligado. Vale somente em modo Automático — em Forçado o fancoil segue o comando manual.",
     defaultValue: "true",
   },
   {

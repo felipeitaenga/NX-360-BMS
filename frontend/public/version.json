@@ -1,6 +1,6 @@
 {
-  "version": "1.4.0",
-  "build_date": "2026-02-09",
-  "codename": "Fancoil Schematic v3",
-  "notes": "Versionamento inicial + rodapé com versão. Mudanças anteriores foram incorporadas ao v1.4.0."
+  "version": "1.5.0",
+  "build_date": "2026-10-15",
+  "codename": "Schedule Expected-State",
+  "notes": "Programação v2: CMD agendado não força mais FORÇADO; firmware calcula estado esperado em AUTOMÁTICO (prompt ESP32 atualizado + botão de cópia na tela)."
 }
