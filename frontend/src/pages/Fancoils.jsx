@@ -78,15 +78,15 @@ function FancoilItem({ fc, state, hasAlarm, side }) {
       } ${side === 2 ? "flex-row-reverse text-right" : ""}`}
     >
       <Wind className={`w-5 h-5 shrink-0 ${online ? "text-sky-400" : "text-slate-600"}`} strokeWidth={1.75} />
-      <div className={`flex-1 min-w-0 flex ${side === 2 ? "justify-end" : ""}`}>
-      <div className={`min-w-0 truncate text-sm text-left ${side === 2 ? "w-[22rem] max-w-full" : "flex-1"}`} data-testid={`fancoil-temp-${fc.name.toLowerCase()}`}>
-        <span className="font-display font-bold text-base text-foreground">{fc.name}</span>
-        <span className="text-muted-foreground"> - </span>
+      <div className="flex-1 min-w-0 truncate text-sm" data-testid={`fancoil-temp-${fc.name.toLowerCase()}`}>
+        {side !== 2 && <span className="font-display font-bold text-base text-foreground">{fc.name} </span>}
+        {side !== 2 && <span className="text-muted-foreground">- </span>}
         <span className="text-muted-foreground">Temp: </span>
         <span className="font-mono font-bold text-base text-orange-400">{fmtC(state.temperature, 1)}</span>
         <span className="text-muted-foreground"> Setpoint: </span>
         <span className="font-mono font-bold text-base text-emerald-400">{fmtC(state.setpoint ?? fc.setpoint)}</span>
-      </div>
+        {side === 2 && <span className="text-muted-foreground"> -</span>}
+        {side === 2 && <span className="font-display font-bold text-base text-foreground"> {fc.name}</span>}
       </div>
       {forced && <Hand className="w-4 h-4 text-amber-400" strokeWidth={2} />}
       {!online && <WifiOff className="w-4 h-4 text-slate-500" />}
