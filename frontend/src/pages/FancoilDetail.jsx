@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, formatApiError } from "../lib/api";
@@ -11,9 +11,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { toast } from "sonner";
 import { ArrowLeft, Minus, Plus, Power, Hand, Wifi, WifiOff } from "lucide-react";
 import FancoilSchematicSVG from "../components/FancoilSchematicSVG";
-import {
-  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid,
-} from "recharts";
+import { HistoryCharts } from "../components/HistoryCharts";
 
 function IndicatorRow({ label, value, color, testid }) {
   return (
@@ -64,17 +62,6 @@ export default function FancoilDetail() {
   const pressure = pressureBuffer != null ? pressureBuffer : serverPressure;
 
   const canCommand = user && user.role !== "viewer";
-
-  const chartData = useMemo(
-    () =>
-      history.map((h) => ({
-        t: new Date(h.timestamp).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }),
-        temperatura: h.temperature,
-        setpoint: h.setpoint,
-        vag: h.vag,
-      })),
-    [history]
-  );
 
   const sendCommand = async (kind, value) => {
     try {
@@ -381,21 +368,7 @@ export default function FancoilDetail() {
             ))}
           </div>
         </div>
-        <div style={{ width: "100%", height: 288, minHeight: 240 }}>
-          <ResponsiveContainer width="100%" height="100%" minHeight={240}>
-            <LineChart data={chartData}>
-              <CartesianGrid strokeOpacity={0.15} />
-              <XAxis dataKey="t" fontSize={10} tick={{ fill: "currentColor" }} hide={chartData.length > 48} />
-              <YAxis yAxisId="l" fontSize={10} tick={{ fill: "currentColor" }} />
-              <YAxis yAxisId="r" orientation="right" fontSize={10} tick={{ fill: "currentColor" }} />
-              <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
-              <Legend />
-              <Line yAxisId="l" type="monotone" dataKey="temperatura" stroke="#f97316" strokeWidth={2} dot={false} name="Temp. (°C)" />
-              <Line yAxisId="l" type="monotone" dataKey="setpoint" stroke="#10b981" strokeWidth={2} dot={false} name="SP (°C)" />
-              <Line yAxisId="r" type="monotone" dataKey="vag" stroke="#0ea5e9" strokeWidth={2} dot={false} name="VAG (%)" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        <HistoryCharts history={history} range={range} />
       </Card>
 
     </div>

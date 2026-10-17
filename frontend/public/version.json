@@ -1,6 +1,6 @@
 {
-  "version": "1.5.0",
-  "build_date": "2026-10-15",
-  "codename": "Schedule Expected-State",
-  "notes": "Programação v2: CMD agendado não força mais FORÇADO; firmware calcula estado esperado em AUTOMÁTICO (prompt ESP32 atualizado + botão de cópia na tela)."
+  "version": "1.6.0",
+  "build_date": "2026-10-17",
+  "codename": "History Charts v2",
+  "notes": "Histórico agregado (5min/30min/2h) com VAG média/mín/máx por minuto; 2 gráficos sincronizados (Temp×Setpoint e VAG com faixa mín–máx)."
 }

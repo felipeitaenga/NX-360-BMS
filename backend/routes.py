@@ -475,11 +475,31 @@ async def get_history(fancoil_id: str, days: int = 1, user: dict = Depends(get_c
     if not fc:
         raise HTTPException(status_code=404, detail="Fancoil não encontrado")
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    cursor = db.history.find({"device_id": fc["device_id"], "timestamp": {"$gte": since}}).sort("timestamp", 1).limit(10000)
+    bin_min = 5 if days <= 1 else 30 if days <= 7 else 120
+    vag_avg = {"$ifNull": ["$vag_avg", "$vag"]}
+    pipeline = [
+        {"$match": {"device_id": fc["device_id"], "timestamp": {"$gte": since}}},
+        {"$set": {"_bucket": {"$dateTrunc": {
+            "date": {"$dateFromString": {"dateString": "$timestamp"}},
+            "unit": "minute", "binSize": bin_min,
+        }}}},
+        {"$group": {
+            "_id": "$_bucket",
+            "temperature": {"$avg": {"$ifNull": ["$temp_avg", "$temperature"]}},
+            "setpoint": {"$avg": "$setpoint"},
+            "vag": {"$avg": vag_avg},
+            "vag_min": {"$min": {"$ifNull": ["$vag_min", "$vag"]}},
+            "vag_max": {"$max": {"$ifNull": ["$vag_max", "$vag"]}},
+            "samples": {"$sum": 1},
+        }},
+        {"$sort": {"_id": 1}},
+    ]
     out = []
-    async for h in cursor:
-        h.pop("_id", None)
-        out.append(h)
+    async for h in db.history.aggregate(pipeline):
+        ts = h.pop("_id").replace(tzinfo=timezone.utc).isoformat()
+        out.append({"timestamp": ts, "interval_min": bin_min, **{
+            k: (round(v, 2) if isinstance(v, (int, float)) else v) for k, v in h.items()
+        }})
     return out
 
 

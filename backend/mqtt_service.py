@@ -540,20 +540,32 @@ class MQTTService:
     async def _maybe_save_history(self, st: FancoilState):
         now = datetime.now(timezone.utc)
         minute_key = now.replace(second=0, microsecond=0).isoformat()
+        base = {
+            "device_id": st.device_id,
+            "minute": minute_key,
+            "timestamp": now.isoformat(),
+            "temperature": st.temperature,
+            "setpoint": st.setpoint,
+            "vag": st.vag,
+            "status": st.status,
+        }
+        acc, avg = {}, {}
+        # Acumuladores por minuto (soma/contagem/mín/máx) via pipeline update atômico
+        for key, val in (("vag", st.vag), ("temp", st.temperature)):
+            if val is None or getattr(st, "temp_error", False) and key == "temp":
+                continue
+            v = float(val)
+            acc[f"{key}_n"] = {"$add": [{"$ifNull": [f"${key}_n", 0]}, 1]}
+            acc[f"{key}_sum"] = {"$add": [{"$ifNull": [f"${key}_sum", 0]}, v]}
+            avg[f"{key}_avg"] = {"$divide": [f"${key}_sum", f"${key}_n"]}
+            if key == "vag":
+                acc["vag_min"] = {"$min": [{"$ifNull": ["$vag_min", v]}, v]}
+                acc["vag_max"] = {"$max": [{"$ifNull": ["$vag_max", v]}, v]}
+        pipeline = [{"$set": {**base, **acc}}]
+        if avg:
+            pipeline.append({"$set": avg})
         await db.history.update_one(
-            {"device_id": st.device_id, "minute": minute_key},
-            {
-                "$set": {
-                    "device_id": st.device_id,
-                    "minute": minute_key,
-                    "timestamp": now.isoformat(),
-                    "temperature": st.temperature,
-                    "setpoint": st.setpoint,
-                    "vag": st.vag,
-                    "status": st.status,
-                }
-            },
-            upsert=True,
+            {"device_id": st.device_id, "minute": minute_key}, pipeline, upsert=True
         )
 
     async def publish_command(self, device_id: str, var: str, value: str, user_id: str) -> dict:
