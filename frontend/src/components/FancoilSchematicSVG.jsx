@@ -262,7 +262,7 @@ export default function FancoilSchematicSVG({ running, temperature, setpoint, va
       {/* ================= LEITURAS ================= */}
       {/* Temperatura (retorno) */}
       <g transform="translate(95 300)">
-        <rect x="-88" y="-28" width="176" height="56" rx="10" fill={tempError ? "#ef4444" : "hsl(var(--card))"} stroke={tempError ? "#ef4444" : WARM} strokeWidth="2.5" />
+        <rect x="-88" y="-28" width="176" height="56" rx="10" fill={tempError ? "#ef4444" : "hsl(var(--card))"} stroke={tempError ? "#ef4444" : WARM} strokeWidth="1.5" />
         <text x="0" y="-8" textAnchor="middle" fontSize="12" fill={tempError ? "#fff" : "currentColor"} opacity="0.75" className="font-mono">TEMP. RETORNO</text>
         <text x="0" y="18" textAnchor="middle" fontSize="24" fontWeight="900" fill={tempError ? "#fff" : WARM} className="font-mono">
           {tempError ? "SENSOR ERRO" : temperature != null ? `${temperature.toFixed(1)} °C` : "--"}
