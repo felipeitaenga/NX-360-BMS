@@ -739,7 +739,7 @@ function MqttDiagTab() {
   });
   const devices = summary?.devices || [];
   const EXPECTED = ["STATUS", "MODO", "TEMPERATURA", "VAG", "CMD/SET", "ESTADO/SET", "SETPOINT/SET", "PRESSAO/SET"];
-  const VAR_OPTIONS = ["ONLINE", "STATUS", "MODO", "TEMPERATURA", "VAG", "ESTADO/SET", "CMD/SET", "SETPOINT/SET", "PRESSAO/SET"];
+  const VAR_OPTIONS = ["ONLINE", "STATUS", "MODO", "TEMPERATURA", "VAG", "VERSAO", "ESTADO/SET", "CMD/SET", "SETPOINT/SET", "PRESSAO/SET"];
 
   const addMapping = async () => {
     try {
@@ -808,6 +808,7 @@ function MqttDiagTab() {
             <thead className="bg-muted/40 text-left">
               <tr>
                 <th className="p-2">device_id</th>
+                <th className="p-2">Firmware</th>
                 {EXPECTED.map((v) => <th key={v} className="p-2 font-mono">{v}</th>)}
                 <th className="p-2">Última msg</th>
                 <th className="p-2">#</th>
@@ -820,6 +821,13 @@ function MqttDiagTab() {
                 return (
                   <tr key={d.device_id} className="border-t border-border/60 hover:bg-accent/5" data-testid={`diag-row-${d.device_id}`}>
                     <td className="p-2 font-mono font-bold">{d.device_id}</td>
+                    <td className="p-2 font-mono" data-testid={`diag-fw-${d.device_id}`}>
+                      {varMap.VERSAO ? (
+                        <span className="text-sky-400">v{String(varMap.VERSAO.last_payload).trim()}</span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
                     {EXPECTED.map((v) => (
                       <td key={v} className="p-2">
                         {varMap[v] ? (
@@ -844,7 +852,7 @@ function MqttDiagTab() {
                 );
               })}
               {devices.length === 0 && (
-                <tr><td colSpan={EXPECTED.length + 4} className="p-6 text-center text-muted-foreground">Nenhum tópico recebido ainda. Aguarde ~5s...</td></tr>
+                <tr><td colSpan={EXPECTED.length + 5} className="p-6 text-center text-muted-foreground">Nenhum tópico recebido ainda. Aguarde ~5s...</td></tr>
               )}
             </tbody>
           </table>

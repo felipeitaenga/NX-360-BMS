@@ -67,6 +67,7 @@ function FancoilItem({ fc, state, hasAlarm, side }) {
   const forced = (state.estado ?? fc.estado) === false;
   const authorized = fc.authorized !== false;
   const online = state.online ?? fc.online;
+  const fw = state.firmware_version ?? fc.firmware_version;
   const content = (
     <div
       data-testid={`fancoil-card-${fc.name.toLowerCase()}`}
@@ -81,6 +82,12 @@ function FancoilItem({ fc, state, hasAlarm, side }) {
           {state.temperature != null ? `${state.temperature.toFixed(1)}°` : "--"}
         </div>
       </div>
+      <span
+        className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-border text-muted-foreground shrink-0"
+        data-testid={`fancoil-fw-${fc.name.toLowerCase()}`}
+      >
+        {fw ? `v${fw}` : "fw —"}
+      </span>
       {forced && <Hand className="w-4 h-4 text-amber-400" strokeWidth={2} />}
       {!online && <WifiOff className="w-4 h-4 text-slate-500" />}
       <Dot kind={kind} hasAlarm={hasAlarm} />
@@ -103,6 +110,7 @@ function FancoilItem({ fc, state, hasAlarm, side }) {
             <div>Setpoint: {state.setpoint != null ? `${state.setpoint.toFixed(1)} °C` : "--"}</div>
             <div>VAG: {state.vag != null ? `${state.vag.toFixed(0)}%` : "--"}</div>
             <div>Modo: {forced ? "FORÇADO" : "AUTOMÁTICO"}</div>
+            <div>Firmware: {fw ? `v${fw}` : "—"}</div>
           </div>
         </TooltipContent>
       </Tooltip>

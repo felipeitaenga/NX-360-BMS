@@ -97,6 +97,10 @@ Firmware pronto (não mexer). Backend/UI alinhados ao protocolo:
 - `GET /api/history/{id}?days=`: agregação `$dateTrunc` 5min (24h) / 30min (7d) / 2h (30d); médias temp/setpoint/vag + mín/máx VAG; fallback para docs antigos via `$ifNull`.
 - Frontend `components/HistoryCharts.jsx`: 2 gráficos com `syncId` (Temp laranja × Setpoint verde stepAfter, escala auto; VAG 0–100% com área mín–máx), tooltip compartilhado.
 
+## Novidades (2026-10-17 — v1.7.0 Versão do firmware)
+- `TJS/{ID}/VERSAO` (texto) → `FancoilState.firmware_version` (strip), marca online; incluído em `to_dict()`, persistido em `device_states` e restaurado no start.
+- UI: subtítulo do FancoilDetail "• Firmware vX" (ou "—"); badge `vX`/`fw —` em cada card da lista de fancoils + tooltip; coluna "Firmware" no Diagnóstico MQTT (Admin) e VERSAO nas opções de mapeamento.
+
 ## Backlog
 - P1: Mapear MODO/STATUS fora do prefixo também (atualmente CJ031 só tem TEMPERATURA e VAG mapeados — faltam outros tópicos se o firmware publicar)
 - P1: dashboards por sistema (HVAC/ilum/hidráulica) e indicadores agregados por andar

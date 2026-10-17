@@ -1,6 +1,6 @@
 {
-  "version": "1.6.0",
+  "version": "1.7.0",
   "build_date": "2026-10-17",
-  "codename": "History Charts v2",
-  "notes": "Histórico agregado (5min/30min/2h) com VAG média/mín/máx por minuto; 2 gráficos sincronizados (Temp×Setpoint e VAG com faixa mín–máx)."
+  "codename": "Firmware Version",
+  "notes": "Tópico VERSAO: versão do firmware de cada controladora no detalhe do fancoil, na lista de fancoils e no Diagnóstico MQTT (persistida em device_states)."
 }

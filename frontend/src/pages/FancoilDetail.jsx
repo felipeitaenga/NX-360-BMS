@@ -96,6 +96,9 @@ export default function FancoilDetail() {
         </h1>
         <div className="text-muted-foreground text-sm mt-1 font-mono uppercase tracking-wider">
           {fancoil.description} • Dispositivo {fancoil.device_id}
+          <span className="font-mono normal-case text-muted-foreground" data-testid="fancoil-firmware-version">
+            {" "}• Firmware {(st.firmware_version ?? fancoil.firmware_version) ? `v${st.firmware_version ?? fancoil.firmware_version}` : "—"}
+          </span>
         </div>
       </div>
 

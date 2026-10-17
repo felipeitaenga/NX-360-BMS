@@ -48,6 +48,7 @@ class FancoilState:
         self.setpoint: Optional[float] = None
         self.vag: Optional[float] = None
         self.pressure: Optional[float] = None  # % — supervisório envia via PRESSAO/SET
+        self.firmware_version: Optional[str] = None
         self.last_update: Optional[str] = None
         self.last_change_ts: float = time.time()
         # Schedule sync tracking (comparar o que o BMS enviou vs o que a controladora aplicou)
@@ -90,6 +91,7 @@ class FancoilState:
             "setpoint": self.setpoint,
             "vag": self.vag,
             "pressure": self.pressure,
+            "firmware_version": self.firmware_version,
             "last_update": self.last_update,
             "schedule_sent_at": self.schedule_sent_at,
             "schedule_applied_at": self.schedule_applied_at,
@@ -150,7 +152,7 @@ class MQTTService:
                     continue
                 st = self.get_state(did)
                 for key in ("online", "status", "modo", "estado", "cmd",
-                            "temperature", "temp_error", "setpoint", "vag", "pressure", "last_update"):
+                            "temperature", "temp_error", "setpoint", "vag", "pressure", "firmware_version", "last_update"):
                     if key in doc and doc[key] is not None:
                         setattr(st, key, doc[key])
         if self.simulation:
@@ -493,6 +495,9 @@ class MQTTService:
                     st.online = True
             except ValueError:
                 pass
+        elif var == "VERSAO":
+            st.firmware_version = payload.strip() or None
+            st.online = True
         elif var in ("SCHEDULE/STATE", "SCHEDULE"):
             # Confirmação de agenda aplicada pela controladora
             st.schedule_applied_payload = payload
