@@ -462,8 +462,14 @@ class MQTTService:
                 st.temperature = None
             else:
                 try:
-                    st.temperature = float(payload)
-                    st.temp_error = False
+                    t = float(payload)
+                    # -127 / 85 (DS18B20) ou fora da faixa física → falha de sensor
+                    if -20.0 < t < 80.0:
+                        st.temperature = t
+                        st.temp_error = False
+                    else:
+                        st.temperature = None
+                        st.temp_error = True
                 except ValueError:
                     pass
         elif var == "VAG":

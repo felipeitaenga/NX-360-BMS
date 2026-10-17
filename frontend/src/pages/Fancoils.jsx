@@ -73,20 +73,26 @@ function FancoilItem({ fc, state, hasAlarm, side }) {
   const content = (
     <div
       data-testid={`fancoil-card-${fc.name.toLowerCase()}`}
-      className={`flex items-center gap-3 px-3 py-2 rounded-md border border-border bg-card hover:bg-accent/10 transition-all ${
+      className={`flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-2 rounded-md border border-border bg-card hover:bg-accent/10 transition-all ${
         !authorized ? "opacity-40 pointer-events-none" : ""
       } ${side === 2 ? "flex-row-reverse text-right" : ""}`}
     >
       <Wind className={`w-5 h-5 shrink-0 ${online ? "text-sky-400" : "text-slate-600"}`} strokeWidth={1.75} />
-      <div className="flex-1 min-w-0 truncate text-sm" data-testid={`fancoil-temp-${fc.name.toLowerCase()}`}>
+      <div className={`flex-1 min-w-0 truncate text-sm flex flex-col sm:block ${side === 2 ? "items-end" : ""}`} data-testid={`fancoil-temp-${fc.name.toLowerCase()}`}>
         {side !== 2 && <span className="font-display font-bold text-base text-foreground">{fc.name} </span>}
-        {side !== 2 && <span className="text-muted-foreground">- </span>}
-        <span className="text-muted-foreground">Temp: </span>
-        <span className="font-mono font-bold text-base text-orange-400">{fmtC(state.temperature, 1)}</span>
-        <span className="text-muted-foreground"> Setpoint: </span>
-        <span className="font-mono font-bold text-base text-emerald-400">{fmtC(state.setpoint ?? fc.setpoint)}</span>
-        {side === 2 && <span className="text-muted-foreground"> -</span>}
-        {side === 2 && <span className="font-display font-bold text-base text-foreground"> {fc.name}</span>}
+        {side !== 2 && <span className="text-muted-foreground hidden sm:inline">- </span>}
+        <span className="text-muted-foreground hidden sm:inline">Temp: </span>
+        {state.temp_error ? (
+          <span className="font-mono font-bold text-base text-red-500"><span className="sm:hidden">ERRO</span><span className="hidden sm:inline">SENSOR ERRO</span></span>
+        ) : (
+          <span className="font-mono font-bold text-base text-orange-400">{fmtC(state.temperature, 1)}</span>
+        )}
+        <span className="hidden sm:inline">
+          <span className="text-muted-foreground"> Setpoint: </span>
+          <span className="font-mono font-bold text-base text-emerald-400">{fmtC(state.setpoint ?? fc.setpoint)}</span>
+        </span>
+        {side === 2 && <span className="text-muted-foreground hidden sm:inline"> -</span>}
+        {side === 2 && <span className="font-display font-bold text-base text-foreground order-first sm:order-none"> {fc.name}</span>}
       </div>
       {forced && <Hand className="w-4 h-4 text-amber-400" strokeWidth={2} />}
       {!online && <WifiOff className="w-4 h-4 text-slate-500" />}
@@ -271,7 +277,7 @@ export default function Fancoils() {
 
       {/* Building grid */}
       <Card className="p-4 lg:p-6">
-        <div className="grid grid-cols-[1fr_auto_1fr] gap-4 lg:gap-6 items-stretch">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 sm:gap-4 lg:gap-6 items-stretch">
           <div className="flex flex-col gap-2">
             {floors.map((f) => {
               const fc = leftByFloor[f];
