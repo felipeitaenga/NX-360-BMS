@@ -7,7 +7,6 @@ import { useAuth } from "../context/AuthContext";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "../components/ui/alert-dialog";
 import { toast } from "sonner";
 import { ArrowLeft, Minus, Plus, Power, Hand, Wifi, WifiOff } from "lucide-react";
 import FancoilSchematicSVG from "../components/FancoilSchematicSVG";
@@ -152,9 +151,8 @@ export default function FancoilDetail() {
             <div>
               <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Condição de operação</div>
               <div className="grid grid-cols-2 gap-2">
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
                     <Button
+                      onClick={async () => { setSendingEstado(true); await sendCommand("ESTADO", "true"); setSendingEstado(false); }}
                       disabled={!online || estado === true || sendingEstado}
                       data-testid="btn-condicao-normal"
                       className={`h-14 font-display font-black uppercase tracking-wide ${estado === true
@@ -163,27 +161,9 @@ export default function FancoilDetail() {
                     >
                       NORMAL
                     </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Mudar para NORMAL</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        O fancoil passará a obedecer a <b>programação horária da controladora</b>.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                      <AlertDialogAction data-testid="confirm-condicao-normal"
-                        onClick={async () => { setSendingEstado(true); await sendCommand("ESTADO", "true"); setSendingEstado(false); }}>
-                        Confirmar
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
 
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
                     <Button
+                      onClick={async () => { setSendingEstado(true); await sendCommand("ESTADO", "false"); setSendingEstado(false); }}
                       disabled={!online || estado === false || sendingEstado}
                       data-testid="btn-condicao-forcado"
                       className={`h-14 font-display font-black uppercase tracking-wide ${estado === false
@@ -192,23 +172,6 @@ export default function FancoilDetail() {
                     >
                       FORÇADO
                     </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Mudar para FORÇADO</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        O fancoil passará a obedecer apenas <b>comandos do supervisório</b> (LIGAR/DESLIGAR abaixo).
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                      <AlertDialogAction data-testid="confirm-condicao-forcado"
-                        onClick={async () => { setSendingEstado(true); await sendCommand("ESTADO", "false"); setSendingEstado(false); }}>
-                        Confirmar
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
               </div>
             </div>
 
@@ -216,9 +179,8 @@ export default function FancoilDetail() {
             <div>
               <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Comando</div>
               <div className="grid grid-cols-2 gap-2">
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
                     <Button
+                      onClick={async () => { setSendingCmd(true); await sendCommand("CMD", "true"); setSendingCmd(false); }}
                       disabled={!online || estado !== false || cmd === true || sendingCmd}
                       data-testid="btn-cmd-ligar"
                       className={`h-14 font-display text-base font-black uppercase tracking-wide ${cmd === true
@@ -227,25 +189,9 @@ export default function FancoilDetail() {
                     >
                       <Power className="w-5 h-5 mr-2" /> LIGAR
                     </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>LIGAR fancoil {fancoil.name}?</AlertDialogTitle>
-                      <AlertDialogDescription>Envia CMD=true via tópico {fancoil.name} CMD/SET.</AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                      <AlertDialogAction data-testid="confirm-cmd-ligar"
-                        onClick={async () => { setSendingCmd(true); await sendCommand("CMD", "true"); setSendingCmd(false); }}>
-                        Confirmar LIGAR
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
 
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
                     <Button
+                      onClick={async () => { setSendingCmd(true); await sendCommand("CMD", "false"); setSendingCmd(false); }}
                       disabled={!online || estado !== false || cmd === false || sendingCmd}
                       data-testid="btn-cmd-desligar"
                       className={`h-14 font-display text-base font-black uppercase tracking-wide ${cmd === false
@@ -254,21 +200,6 @@ export default function FancoilDetail() {
                     >
                       <Power className="w-5 h-5 mr-2" /> DESLIGAR
                     </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>DESLIGAR fancoil {fancoil.name}?</AlertDialogTitle>
-                      <AlertDialogDescription>Envia CMD=false via tópico {fancoil.name} CMD/SET.</AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                      <AlertDialogAction data-testid="confirm-cmd-desligar"
-                        onClick={async () => { setSendingCmd(true); await sendCommand("CMD", "false"); setSendingCmd(false); }}>
-                        Confirmar DESLIGAR
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
               </div>
               {estado === true && (
                 <div className="mt-2 text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-1.5 rounded">

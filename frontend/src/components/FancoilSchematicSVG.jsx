@@ -14,6 +14,36 @@ import React, { useId } from "react";
  *
  * Props (inalteradas): running, temperature, setpoint, vag, tempError
  */
+// Geometria do ventilador centrífugo (calculada uma vez)
+const FAN = (() => {
+  const R0 = 50, R1 = 74, PHI_T = 0.42, OUT = 128;
+  const r = (phi) => R0 + (R1 - R0) * (phi / (2 * Math.PI));
+  const pt = (phi, k = 0) => {
+    const rr = r(phi) - k;
+    return [rr * Math.sin(phi), -rr * Math.cos(phi)];
+  };
+  const spiral = (k) => {
+    let d = "";
+    for (let i = 0; i <= 72; i++) {
+      const phi = PHI_T + ((2 * Math.PI - PHI_T) * i) / 72;
+      const [x, y] = pt(phi, k);
+      d += `${i ? " L" : "M"} ${x.toFixed(1)} ${y.toFixed(1)}`;
+    }
+    return d;
+  };
+  const [tx, ty] = pt(PHI_T);
+  return {
+    housing: `${spiral(0)} L ${OUT} ${-R1} L ${OUT} ${ty.toFixed(1)} Z`,
+    inner: spiral(4),
+    tongue: [tx, ty],
+    out: OUT,
+    outTop: -R1,
+    outBottom: ty,
+    outMid: (-R1 + ty) / 2,
+    blades: Array.from({ length: 32 }, (_, i) => i * 11.25),
+  };
+})();
+
 export default function FancoilSchematicSVG({ running, temperature, setpoint, vag, tempError }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
   const id = (n) => `fc${uid}-${n}`;
@@ -41,14 +71,17 @@ export default function FancoilSchematicSVG({ running, temperature, setpoint, va
 
   return (
     <svg
-      viewBox="0 0 900 360"
+      viewBox="0 0 900 385"
       className="w-full h-auto select-none"
       role="img"
       aria-label={`Esquema do fancoil — ${running ? "operando" : "parado"}`}
       data-testid="fancoil-schematic"
     >
       <style>{`
-        .${id("spin")} { transform-box: fill-box; transform-origin: center; animation: ${id("rot")} .55s linear infinite; }
+        .${id("spin")} { transform-box: fill-box; transform-origin: center; animation: ${id("rot")} .6s linear infinite; }
+        .${id("spinFast")} { transform-box: fill-box; transform-origin: center; animation: ${id("rot")} .32s linear infinite; }
+        .${id("chev")} { animation: ${id("chevMove")} 1s linear infinite; }
+        @keyframes ${id("chevMove")} { 0% { transform: translateX(0); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateX(80px); opacity: 0; } }
         .${id("air")} { animation: ${id("move")} 4.8s linear infinite; }
         .${id("water")} { stroke-dasharray: 10 8; animation: ${id("flow")} ${waterDur} linear infinite; }
         .${id("waterR")} { stroke-dasharray: 10 8; animation: ${id("flowR")} ${waterDur} linear infinite; }
@@ -70,7 +103,7 @@ export default function FancoilSchematicSVG({ running, temperature, setpoint, va
         }
         @keyframes ${id("blink")} { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
         @media (prefers-reduced-motion: reduce) {
-          .${id("spin")}, .${id("air")}, .${id("water")}, .${id("waterR")}, .${id("drop")}, .${id("pulse")} { animation: none !important; }
+          .${id("spin")}, .${id("air")}, .${id("water")}, .${id("waterR")}, .${id("drop")}, .${id("pulse")}, .${id("spinFast")}, .${id("chev")} { animation: none !important; }
         }
       `}</style>
 
@@ -91,6 +124,17 @@ export default function FancoilSchematicSVG({ running, temperature, setpoint, va
           <stop offset="0" stopColor={waterOn ? WATER : "#64748b"} stopOpacity={coilOpacity * 0.6} />
           <stop offset="1" stopColor={waterOn ? WATER : "#64748b"} stopOpacity={coilOpacity} />
         </linearGradient>
+        <linearGradient id={id("housing")} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#94a3b8" stopOpacity="0.22" />
+          <stop offset="0.5" stopColor="#94a3b8" stopOpacity="0.08" />
+          <stop offset="1" stopColor="#94a3b8" stopOpacity="0.18" />
+        </linearGradient>
+        <filter id={id("blur")} x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="0.7" />
+        </filter>
+        <clipPath id={id("outlet")}>
+          <rect x="30" y={FAN.outTop + 2} width={FAN.out - 32} height={FAN.outBottom - FAN.outTop - 4} />
+        </clipPath>
         <radialGradient id={id("fanGlow")}>
           <stop offset="0" stopColor={COOL} stopOpacity="0.35" />
           <stop offset="1" stopColor={COOL} stopOpacity="0" />
@@ -206,50 +250,102 @@ export default function FancoilSchematicSVG({ running, temperature, setpoint, va
           <text x="-38" y="4" textAnchor="middle" fontSize="10" fontWeight="700" fill={waterOn ? WATER : "#64748b"} className="font-mono">M</text>
         </g>
         {/* Indicador de abertura da VAG */}
-        <g transform="translate(130 60)">
-          <rect x="-58" y="-24" width="116" height="52" rx="8" fill="hsl(var(--card))" stroke={waterOn ? WATER : "#64748b"} strokeWidth="2" />
-          <text x="0" y="-7" textAnchor="middle" fontSize="12" fill="currentColor" opacity="0.7" className="font-mono">VAG</text>
-          <text x="0" y="18" textAnchor="middle" fontSize="22" fontWeight="900" fill={waterOn ? WATER : "#94a3b8"} className="font-mono">
+        <g transform="translate(130 64)">
+          <rect x="-46" y="-20" width="92" height="40" rx="6" fill="hsl(var(--card))" stroke={waterOn ? WATER : "#64748b"} strokeWidth="1.5" />
+          <text x="0" y="-5" textAnchor="middle" fontSize="10" fill="currentColor" opacity="0.6" className="font-mono">VAG</text>
+          <text x="0" y="12" textAnchor="middle" fontSize="15" fontWeight="800" fill={waterOn ? WATER : "#94a3b8"} className="font-mono">
             {vagPct != null ? `${vagPct.toFixed(0)}%` : "--"}
           </text>
           {/* barra de abertura */}
-          <rect x="-50" y="32" width="100" height="5" rx="2" fill="currentColor" opacity="0.12" />
-          <rect x="-50" y="32" width={vagPct != null ? (100 * vagPct) / 100 : 0} height="5" rx="2" fill={WATER} />
-          <line x1="58" y1="0" x2="86" y2="18" stroke="currentColor" strokeOpacity="0.25" strokeDasharray="2 3" />
+          <rect x="-40" y="22" width="80" height="4" rx="2" fill="currentColor" opacity="0.12" />
+          <rect x="-40" y="22" width={vagPct != null ? (80 * vagPct) / 100 : 0} height="4" rx="2" fill={WATER} />
+          <line x1="46" y1="0" x2="86" y2="18" stroke="currentColor" strokeOpacity="0.25" strokeDasharray="2 3" />
         </g>
       </g>
 
       {/* ================= VENTILADOR CENTRÍFUGO ================= */}
       <g transform="translate(500 196)">
-        {running && <circle r="92" fill={`url(#${id("fanGlow")})`} />}
-        {/* voluta (carcaça em espiral) com boca de descarga à direita */}
+        {running && <circle r="96" fill={`url(#${id("fanGlow")})`} />}
+
+        {/* voluta: espiral de Arquimedes + boca de descarga horizontal */}
         <path
-          d="M 70 -58 L 128 -58 L 128 -24 L 66 -24 A 66 66 0 1 1 6 -66 A 70 70 0 0 1 70 -58 Z"
-          fill="hsl(var(--card))"
+          d={FAN.housing}
+          fill={`url(#${id("housing")})`}
           stroke="currentColor"
-          strokeOpacity="0.55"
+          strokeOpacity="0.6"
           strokeWidth="2.5"
           strokeLinejoin="round"
         />
+        {/* reforço interno da voluta (dá profundidade) */}
+        <path d={FAN.inner} fill="none" stroke="currentColor" strokeOpacity="0.12" strokeWidth="6" />
+        {/* lingueta (cutoff) */}
+        <circle cx={FAN.tongue[0]} cy={FAN.tongue[1]} r="2.5" fill="currentColor" fillOpacity="0.5" />
+        {/* flange da boca de descarga */}
+        <line x1={FAN.out} y1={FAN.outTop - 5} x2={FAN.out} y2={FAN.outBottom + 5} stroke="currentColor" strokeOpacity="0.6" strokeWidth="4" strokeLinecap="round" />
+
+        {/* setas de ar saindo pela boca */}
+        {running && (
+          <g clipPath={`url(#${id("outlet")})`}>
+            {[0, 0.33, 0.66].map((d) => (
+              <path
+                key={d}
+                className={id("chev")}
+                d={`M 40 ${FAN.outMid - 7} l 8 7 l -8 7`}
+                fill="none"
+                stroke={COOL}
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ animationDelay: `-${d}s` }}
+              />
+            ))}
+          </g>
+        )}
+
+        {/* bocal de aspiração (atrás do rotor) */}
+        <circle r="47" fill="none" stroke="currentColor" strokeOpacity="0.18" strokeWidth="1.5" strokeDasharray="3 4" />
+
         {/* rotor */}
         <g className={running ? id("spin") : undefined}>
-          <circle r="46" fill="none" stroke={COOL} strokeOpacity={running ? 0.5 : 0.25} strokeWidth="1.5" />
-          {Array.from({ length: 16 }, (_, i) => i * 22.5).map((a) => (
-            <path
-              key={a}
-              d="M 24 0 Q 36 -6 45 -14"
-              fill="none"
-              stroke={COOL}
-              strokeOpacity={running ? 0.95 : 0.4}
-              strokeWidth="3"
-              strokeLinecap="round"
-              transform={`rotate(${a})`}
-            />
+          {/* disco traseiro */}
+          <circle r="43" fill={running ? COOL : "#64748b"} fillOpacity={running ? 0.1 : 0.08} />
+          {/* pás curvadas para frente */}
+          <g filter={running ? `url(#${id("blur")})` : undefined}>
+            {FAN.blades.map((a) => (
+              <path
+                key={a}
+                d="M 0 -29 Q 3.5 -36 9 -41.5"
+                fill="none"
+                stroke={running ? COOL : "#64748b"}
+                strokeOpacity={running ? 0.95 : 0.7}
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                transform={`rotate(${a})`}
+              />
+            ))}
+          </g>
+          {/* anéis (aro externo e interno) */}
+          <circle r="43" fill="none" stroke={running ? COOL : "#64748b"} strokeWidth="2.5" />
+          <circle r="28.5" fill="none" stroke={running ? COOL : "#64748b"} strokeOpacity="0.7" strokeWidth="1.5" />
+          {/* raios do cubo */}
+          {[0, 90, 180, 270].map((a) => (
+            <line key={a} x1="0" y1="-11" x2="0" y2="-28" stroke={running ? COOL : "#64748b"} strokeOpacity="0.55" strokeWidth="2" transform={`rotate(${a + 45})`} />
           ))}
-          <circle r="24" fill="none" stroke={COOL} strokeOpacity={running ? 0.6 : 0.3} strokeWidth="1.5" />
-          <circle r="9" fill="hsl(var(--card))" stroke={COOL} strokeWidth="2" />
-          <circle r="3" fill={COOL} />
+          {/* cubo + parafusos + eixo */}
+          <circle r="11" fill="hsl(var(--card))" stroke={running ? COOL : "#64748b"} strokeWidth="2" />
+          {[0, 90, 180, 270].map((a) => (
+            <circle key={a} cx="0" cy="-6.5" r="1.4" fill={running ? COOL : "#64748b"} transform={`rotate(${a})`} />
+          ))}
+          <circle r="3" fill={running ? COOL : "#64748b"} />
         </g>
+
+        {/* arcos de velocidade (efeito de giro rápido) */}
+        {running && (
+          <g className={id("spinFast")}>
+            <circle r="36" fill="none" stroke="#e0f2fe" strokeOpacity="0.55" strokeWidth="2" strokeDasharray="18 208" strokeLinecap="round" />
+            <circle r="36" fill="none" stroke="#e0f2fe" strokeOpacity="0.35" strokeWidth="2" strokeDasharray="10 216" strokeDashoffset="113" strokeLinecap="round" />
+          </g>
+        )}
       </g>
 
       {/* ================= GRELHA DE INSUFLAMENTO ================= */}
@@ -259,17 +355,40 @@ export default function FancoilSchematicSVG({ running, temperature, setpoint, va
         ))}
       </g>
 
-      {/* ================= LEITURAS ================= */}
+      {/* ================= LEITURAS (faixa inferior, separada do desenho) ================= */}
+      <line x1="20" y1="308" x2="880" y2="308" stroke="currentColor" strokeOpacity="0.1" />
+
+      {/* sensor de temperatura no retorno + linha guia até o mostrador */}
+      <circle cx="110" cy="236" r="4.5" fill="hsl(var(--card))" stroke={tempError ? "#ef4444" : WARM} strokeWidth="2" />
+      <path d="M 110 241 V 322" stroke={tempError ? "#ef4444" : WARM} strokeOpacity="0.45" strokeDasharray="2 3" />
+
       {/* Temperatura (retorno) */}
-      <g transform="translate(95 300)">
-        <rect x="-88" y="-28" width="176" height="56" rx="10" fill={tempError ? "#ef4444" : "hsl(var(--card))"} stroke={tempError ? "#ef4444" : WARM} strokeWidth="1.5" />
-        <text x="0" y="-8" textAnchor="middle" fontSize="12" fill={tempError ? "#fff" : "currentColor"} opacity="0.75" className="font-mono">TEMP. RETORNO</text>
-        <text x="0" y="18" textAnchor="middle" fontSize="24" fontWeight="900" fill={tempError ? "#fff" : WARM} className="font-mono">
+      <g transform="translate(20 322)">
+        <rect width="190" height="50" rx="8" fill={tempError ? "#ef4444" : WARM} fillOpacity={tempError ? 0.9 : 0.08} stroke={tempError ? "#ef4444" : WARM} strokeOpacity="0.6" strokeWidth="1.5" />
+        <rect x="0" y="0" width="5" height="50" rx="2.5" fill={tempError ? "#fff" : WARM} />
+        <text x="18" y="18" fontSize="10" fill={tempError ? "#fff" : "currentColor"} opacity="0.7" className="font-mono" letterSpacing="1">TEMP. RETORNO</text>
+        <text x="18" y="40" fontSize="19" fontWeight="800" fill={tempError ? "#fff" : WARM} className="font-mono">
           {tempError ? "SENSOR ERRO" : temperature != null ? `${temperature.toFixed(1)} °C` : "--"}
         </text>
       </g>
 
-      {/* Setpoint removido do esquema — exibido no card de Comandos */}
+      {/* Setpoint + desvio */}
+      <g transform="translate(690 322)">
+        <rect width="190" height="50" rx="8" fill="#10b981" fillOpacity="0.08" stroke="#10b981" strokeOpacity="0.6" strokeWidth="1.5" />
+        <rect x="185" y="0" width="5" height="50" rx="2.5" fill="#10b981" />
+        <text x="14" y="18" fontSize="10" fill="currentColor" opacity="0.7" className="font-mono" letterSpacing="1">TEMP. DESEJADA</text>
+        <text x="14" y="40" fontSize="19" fontWeight="800" fill="#10b981" className="font-mono">
+          {setpoint != null ? `${setpoint.toFixed(1)} °C` : "--"}
+        </text>
+        {delta != null && (
+          <g>
+            <text x="172" y="18" textAnchor="end" fontSize="9" fill="currentColor" opacity="0.55" className="font-mono">DESVIO</text>
+            <text x="172" y="39" textAnchor="end" fontSize="13" fontWeight="800" fill={deltaColor} className="font-mono">
+              {delta > 0 ? "+" : ""}{delta.toFixed(1)}
+            </text>
+          </g>
+        )}
+      </g>
 
       {/* Rótulos das seções */}
       {[
@@ -285,10 +404,10 @@ export default function FancoilSchematicSVG({ running, temperature, setpoint, va
       ))}
 
       {/* Estado geral */}
-      <g transform="translate(500 330)">
-        <rect x="-62" y="-14" width="124" height="28" rx="14" fill={running ? "#10b981" : "#64748b"} fillOpacity="0.15" stroke={running ? "#10b981" : "#64748b"} strokeWidth="1.5" />
-        <circle cx="-44" cy="0" r="5" fill={running ? "#10b981" : "#64748b"} className={running ? id("pulse") : undefined} />
-        <text x="6" y="5" textAnchor="middle" fontSize="13" fontWeight="800" fill={running ? "#10b981" : "#94a3b8"} className="font-mono" letterSpacing="1.5">
+      <g transform="translate(450 347)">
+        <rect x="-70" y="-17" width="140" height="34" rx="17" fill={running ? "#10b981" : "#64748b"} fillOpacity="0.15" stroke={running ? "#10b981" : "#64748b"} strokeWidth="1.5" />
+        <circle cx="-48" cy="0" r="5" fill={running ? "#10b981" : "#64748b"} className={running ? id("pulse") : undefined} />
+        <text x="8" y="5" textAnchor="middle" fontSize="13" fontWeight="800" fill={running ? "#10b981" : "#94a3b8"} className="font-mono" letterSpacing="1.5">
           {running ? "OPERANDO" : "PARADO"}
         </text>
       </g>
