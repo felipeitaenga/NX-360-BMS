@@ -77,7 +77,7 @@ function FancoilItem({ fc, state, hasAlarm, side }) {
       <Wind className={`w-5 h-5 shrink-0 ${online ? "text-sky-400" : "text-slate-600"}`} strokeWidth={1.75} />
       <div className="flex-1 min-w-0">
         <div className="font-display font-bold text-sm text-foreground truncate">{fc.name}</div>
-        <div className="text-[10px] font-mono uppercase text-muted-foreground tracking-wider">
+        <div className="text-base font-mono font-bold text-orange-400" data-testid={`fancoil-temp-${fc.name.toLowerCase()}`}>
           {state.temperature != null ? `${state.temperature.toFixed(1)}°` : "--"}
         </div>
       </div>
