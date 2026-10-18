@@ -109,6 +109,11 @@ Firmware pronto (não mexer). Backend/UI alinhados ao protocolo:
 - UI: aba Admin "Firmware das controladoras" (`components/FirmwareTab.jsx`); FancoilDetail "(solicitado: X)" âmbar após 30 s; Diagnóstico MQTT com Firmware/RSSI/Uptime/RESET e tópicos reais.
 - Prompt firmware reescrito (protocolo v1.4.x completo).
 
+## Novidades (2026-10-18 — v1.9.0 Catálogo de controladoras)
+- `controllers.py`: catálogo `controller_models` (seed FC300 · FANCOIL · KinCony KC868-A4; CRUD admin `/api/admin/controller-models`), registro `controllers` (TIPO/MODELO/VERSAO/ONLINE/RESET/RSSI/UPTIME/OTA/STATE de qualquer device; ONLINE sozinho não cria), `inventory()` une fancoils + lighting_controllers + registro; categoria = TIPO → catálogo → origem.
+- `firmware_routes.py`: firmwares com modelo/categoria/assinatura, índice único (modelo, versao), migração antiga → FC300; upload lê assinatura `NXFW|TIPO|MODELO|VERSAO|`, exige 0xE9, modelo no catálogo, salva `<modelo>-<versao>.bin`; `GET /admin/firmware?categoria=&modelo=`, `GET /admin/firmware/arvore`, controladoras `?modelo=|grupo=sem_modelo|nao_catalogado`; envio 409 `modelo_incompativel` / `sem_modelo` (aceita `forcar_sem_modelo`, registrado no command_log); não exclui versão mais recente.
+- Frontend: `FirmwareTab.jsx` (árvore + versões + controladoras + "Atualizar desatualizadas"), `firmware/ControllerModels.jsx` (aba Modelos + dialog cadastrar), `firmware/FirmwareUpdateDialog.jsx` reutilizável (FancoilDetail admin), `firmware/fwUtils.js` (pré-visualização da assinatura no navegador). Subtítulo FancoilDetail mostra modelo.
+
 ## Backlog
 - P1: Mapear MODO/STATUS fora do prefixo também (atualmente CJ031 só tem TEMPERATURA e VAG mapeados — faltam outros tópicos se o firmware publicar)
 - P1: dashboards por sistema (HVAC/ilum/hidráulica) e indicadores agregados por andar

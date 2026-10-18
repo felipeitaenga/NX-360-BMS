@@ -1,4 +1,4 @@
-"""Firmware das controladoras: upload de .bin, download público por token e OTA escalonado."""
+"""Biblioteca de firmwares (CATEGORIA → MODELO → VERSÃO), download público por token e OTA escalonado."""
 from __future__ import annotations
 import asyncio
 import hashlib
@@ -21,6 +21,9 @@ from db import db
 from mqtt_service import svc
 from ws_manager import manager
 from alarms import raise_alarm, clear_alarm
+from controllers import (
+    CATEGORIAS, CATEGORIA_LABEL, catalog_map, inventory, registry, version_key,
+)
 
 logger = logging.getLogger("firmware")
 router = APIRouter(prefix="/api")
@@ -29,10 +32,16 @@ FW_DIR = Path(__file__).parent / "uploads" / "firmware"
 MAX_BYTES = 4 * 1024 * 1024
 OTA_TIMEOUT_S = 600
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
+SIG_RE = re.compile(rb"NXFW\|TIPO=([^|\x00]{1,32})\|MODELO=([^|\x00]{1,32})\|VERSAO=([^|\x00]{1,16})\|")
 
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _fw_url(d: dict) -> str:
+    base = os.environ["FRONTEND_URL"].rstrip("/")
+    return f"{base}/api/firmware/files/{d['token']}/{d['nome_arquivo']}"
 
 
 def _fw_out(d: dict) -> dict:
@@ -42,46 +51,78 @@ def _fw_out(d: dict) -> dict:
     return out
 
 
-def _fw_url(d: dict) -> str:
-    base = os.environ["FRONTEND_URL"].rstrip("/")
-    return f"{base}/api/firmware/files/{d['token']}/{d['nome_arquivo']}"
+def parse_signature(data: bytes) -> Optional[dict]:
+    m = SIG_RE.search(data)
+    if not m:
+        return None
+    t, mo, v = (x.decode("ascii", "replace").strip() for x in m.groups())
+    return {"tipo": t.upper(), "modelo": mo.upper(), "versao": v}
+
+
+async def migrate_firmwares():
+    await db.firmwares.update_many(
+        {"modelo": {"$exists": False}},
+        {"$set": {"modelo": "FC300", "categoria": "FANCOIL", "assinatura": False}},
+    )
+    try:
+        await db.firmwares.drop_index("versao_1")
+    except Exception:
+        pass
+    await db.firmwares.create_index([("modelo", 1), ("versao", 1)], unique=True)
+
+
+async def _latest_by_model() -> dict:
+    latest = {}
+    async for f in db.firmwares.find({}, {"modelo": 1, "versao": 1}):
+        cur = latest.get(f["modelo"])
+        if not cur or version_key(f["versao"]) > version_key(cur):
+            latest[f["modelo"]] = f["versao"]
+    return latest
 
 
 # ---------------- Upload / lista / download ----------------
 @router.post("/admin/firmware")
 async def upload_firmware(
     file: UploadFile = File(...),
-    versao: str = Form(...),
+    versao: str = Form(""),
+    modelo: str = Form(""),
     notas: str = Form(""),
     user: dict = Depends(require_admin),
 ):
-    versao = versao.strip()
-    if not VERSION_RE.match(versao):
-        raise HTTPException(400, "Versão inválida — use o formato X.Y.Z (ex.: 1.4.1)")
     if not (file.filename or "").lower().endswith(".bin"):
         raise HTTPException(400, "Envie um arquivo .bin")
     data = await file.read(MAX_BYTES + 1)
     if len(data) > MAX_BYTES:
         raise HTTPException(413, "Arquivo maior que 4 MB")
-    if not data:
-        raise HTTPException(400, "Arquivo vazio")
-    if await db.firmwares.find_one({"versao": versao}):
-        raise HTTPException(409, f"A versão {versao} já foi enviada")
-    nome = re.sub(r"[^A-Za-z0-9._-]", "_", Path(file.filename).name)
+    if not data or data[0] != 0xE9:
+        raise HTTPException(400, "Arquivo não é uma imagem de firmware ESP32 válida (1º byte ≠ 0xE9)")
+    versao, modelo = versao.strip(), modelo.strip().upper()
+    sig = parse_signature(data)
+    if sig:
+        if (modelo and modelo != sig["modelo"]) or (versao and versao != sig["versao"]):
+            raise HTTPException(400, f"Este arquivo é {sig['modelo']} v{sig['versao']}")
+        modelo, versao = sig["modelo"], sig["versao"]
+    elif not modelo or not versao:
+        raise HTTPException(400, "Arquivo sem assinatura NXFW — informe o modelo e a versão")
+    if not VERSION_RE.match(versao):
+        raise HTTPException(400, "Versão inválida — use o formato X.Y.Z (ex.: 1.4.1)")
+    cat = (await catalog_map()).get(modelo)
+    if not cat:
+        raise HTTPException(400, {"code": "modelo_nao_catalogado", "modelo": modelo,
+                                  "message": f"Modelo {modelo} não está no catálogo — cadastre-o em Modelos de controladora"})
+    if await db.firmwares.find_one({"modelo": modelo, "versao": versao}):
+        raise HTTPException(409, f"{modelo} v{versao} já foi enviado")
+    nome = f"{modelo.lower()}-{versao}.bin"
     token = secrets.token_hex(16)
     folder = FW_DIR / token
     folder.mkdir(parents=True, exist_ok=True)
     (folder / nome).write_bytes(data)
     doc = {
-        "versao": versao,
-        "nome_arquivo": nome,
-        "tamanho": len(data),
-        "md5": hashlib.md5(data).hexdigest(),
-        "sha256": hashlib.sha256(data).hexdigest(),
-        "token": token,
-        "notas": notas.strip(),
-        "enviado_por": user.get("email"),
-        "criado_em": now_iso(),
+        "versao": versao, "modelo": modelo, "categoria": cat["categoria"],
+        "tipo": sig["tipo"] if sig else None, "assinatura": bool(sig),
+        "nome_arquivo": nome, "nome_original": file.filename, "tamanho": len(data),
+        "md5": hashlib.md5(data).hexdigest(), "sha256": hashlib.sha256(data).hexdigest(),
+        "token": token, "notas": notas.strip(), "enviado_por": user.get("email"), "criado_em": now_iso(),
     }
     res = await db.firmwares.insert_one(doc)
     doc["_id"] = res.inserted_id
@@ -89,8 +130,56 @@ async def upload_firmware(
 
 
 @router.get("/admin/firmware")
-async def list_firmwares(_: dict = Depends(require_admin)):
-    return [_fw_out(d) async for d in db.firmwares.find({}).sort("criado_em", -1)]
+async def list_firmwares(categoria: str = "", modelo: str = "", _: dict = Depends(require_admin)):
+    q = {}
+    if categoria:
+        q["categoria"] = categoria.upper()
+    if modelo:
+        q["modelo"] = modelo.upper()
+    fws = [_fw_out(d) async for d in db.firmwares.find(q)]
+    fws.sort(key=lambda f: (f["modelo"], version_key(f["versao"])), reverse=True)
+    latest = await _latest_by_model()
+    counts: dict = {}
+    for c in await inventory():
+        if c["modelo"] and c["versao"]:
+            counts[(c["modelo"], c["versao"])] = counts.get((c["modelo"], c["versao"]), 0) + 1
+    for f in fws:
+        f["mais_recente"] = latest.get(f["modelo"]) == f["versao"]
+        f["n_controladoras"] = counts.get((f["modelo"], f["versao"]), 0)
+    return fws
+
+
+@router.get("/admin/firmware/arvore")
+async def firmware_tree(_: dict = Depends(require_admin)):
+    catalog = await catalog_map()
+    inv = await inventory()
+    n_ver: dict = {}
+    async for f in db.firmwares.find({}, {"modelo": 1}):
+        n_ver[f["modelo"]] = n_ver.get(f["modelo"], 0) + 1
+    latest = await _latest_by_model()
+    n_ctrl: dict = {}
+    for c in inv:
+        if c["modelo"]:
+            n_ctrl[c["modelo"]] = n_ctrl.get(c["modelo"], 0) + 1
+    cats = []
+    for cat in CATEGORIAS:
+        modelos = [
+            {**m, "n_versoes": n_ver.get(m["modelo"], 0), "n_controladoras": n_ctrl.get(m["modelo"], 0),
+             "versao_mais_recente": latest.get(m["modelo"])}
+            for m in sorted(catalog.values(), key=lambda x: x["modelo"]) if m["categoria"] == cat
+        ]
+        if cat != "OUTRO" or modelos:
+            cats.append({"categoria": cat, "label": CATEGORIA_LABEL[cat], "modelos": modelos})
+    nao_cat: dict = {}
+    for c in inv:
+        if c["modelo"] and not c["catalogado"]:
+            e = nao_cat.setdefault(c["modelo"], {"modelo": c["modelo"], "categoria": c["categoria"], "n_controladoras": 0})
+            e["n_controladoras"] += 1
+    return {
+        "categorias": cats,
+        "sem_modelo": sum(1 for c in inv if not c["modelo"]),
+        "nao_catalogados": sorted(nao_cat.values(), key=lambda x: x["modelo"]),
+    }
 
 
 @router.delete("/admin/firmware/{fw_id}")
@@ -100,6 +189,8 @@ async def delete_firmware(fw_id: str, _: dict = Depends(require_admin)):
         raise HTTPException(404, "Firmware não encontrado")
     if _batch and _batch.get("status") == "executando" and _batch.get("firmware_id") == fw_id:
         raise HTTPException(409, "Este firmware está sendo enviado agora")
+    if (await _latest_by_model()).get(d["modelo"]) == d["versao"]:
+        raise HTTPException(409, f"Não é possível excluir a versão mais recente do {d['modelo']}")
     shutil.rmtree(FW_DIR / d["token"], ignore_errors=True)
     await db.firmwares.delete_one({"_id": d["_id"]})
     return {"ok": True}
@@ -117,15 +208,18 @@ async def download_firmware(token: str, nome: str):
 
 # ---------------- Controladoras ----------------
 @router.get("/admin/firmware/controladoras")
-async def list_controllers(_: dict = Depends(require_admin)):
-    fcs = {fc["device_id"]: fc async for fc in db.fancoils.find({})}
-    out = []
-    for did in sorted(set(fcs) | {d for d in svc.states if not d.startswith("__")}):
-        st = svc.get_state(did).to_dict()
-        fc = fcs.get(did)
-        out.append({**st, "name": fc["name"] if fc else None, "cadastrado": bool(fc)})
-    out.sort(key=lambda x: (not x["cadastrado"], x["name"] or x["device_id"]))
-    return out
+async def list_controllers(categoria: str = "", modelo: str = "", grupo: str = "", _: dict = Depends(require_admin)):
+    inv = await inventory()
+    if modelo:
+        inv = [c for c in inv if c["modelo"] == modelo.upper()]
+    elif grupo == "sem_modelo":
+        inv = [c for c in inv if not c["modelo"]]
+    elif grupo == "nao_catalogado":
+        inv = [c for c in inv if c["modelo"] and not c["catalogado"]]
+    if categoria:
+        inv = [c for c in inv if c["categoria"] == categoria.upper()]
+    inv.sort(key=lambda c: (c["identificacao"] is None, c["identificacao"] or c["device_id"]))
+    return inv
 
 
 # ---------------- OTA escalonado ----------------
@@ -135,10 +229,21 @@ _task: Optional[asyncio.Task] = None
 
 class OtaReq(BaseModel):
     device_ids: List[str]
+    forcar_sem_modelo: bool = False
 
 
 async def _push_batch():
     await manager.broadcast("ota_batch", _batch or {})
+
+
+def _live(did: str) -> dict:
+    r = registry.get(did)
+    st = svc.states.get(did)
+    return {
+        "versao": r.get("versao") or (st.firmware_version if st else None),
+        "ota_state": r.get("ota_state") or (st.ota_state if st else None),
+        "ota_state_at": r.get("ota_state_at") or (st.ota_state_at if st else None),
+    }
 
 
 async def _wait_result(did: str, versao: str, sent_at: str) -> tuple[str, str]:
@@ -146,17 +251,16 @@ async def _wait_result(did: str, versao: str, sent_at: str) -> tuple[str, str]:
     deadline = loop.time() + OTA_TIMEOUT_S
     while loop.time() < deadline:
         await asyncio.sleep(2)
-        st = svc.get_state(did)
-        if st.firmware_version == versao:
+        lv = _live(did)
+        if lv["versao"] == versao:
             return "ok", f"atualizada para {versao}"
-        ota = (st.ota_state or "").lower()
-        if st.ota_state_at and st.ota_state_at > sent_at and ota.startswith(("erro", "rollback", "ignorado")):
-            return "erro", st.ota_state
+        ota = (lv["ota_state"] or "").lower()
+        if lv["ota_state_at"] and lv["ota_state_at"] > sent_at and ota.startswith(("erro", "rollback", "ignorado")):
+            return "erro", lv["ota_state"]
     return "timeout", "sem resposta em 10 min"
 
 
-async def _run_batch(fw: dict, user_email: str):
-    global _batch
+async def _run_batch(fw: dict, forced: set):
     url = _fw_url(fw)
     payload = f"{fw['versao']};{url};{fw['md5']}"
     try:
@@ -168,8 +272,9 @@ async def _run_batch(fw: dict, user_email: str):
             item.update(status="enviado", sent_at=now_iso())
             svc._client.publish(topic, payload, qos=1, retain=False)
             await db.command_log.insert_one({
-                "device_id": did, "user_id": user_email, "topic": topic, "kind": "OTA/SET",
-                "value": fw["versao"], "previous_value": str(svc.get_state(did).firmware_version),
+                "device_id": did, "user_id": _batch["started_by"], "topic": topic, "kind": "OTA/SET",
+                "value": fw["versao"], "modelo": fw["modelo"], "previous_value": str(_live(did)["versao"]),
+                "forcado_sem_modelo": did in forced,
                 "timestamp": item["sent_at"], "confirmed": False, "confirmed_at": None,
             })
             await _push_batch()
@@ -207,23 +312,34 @@ async def send_ota(fw_id: str, req: OtaReq, user: dict = Depends(require_admin))
     fw = await db.firmwares.find_one({"_id": ObjectId(fw_id)})
     if not fw:
         raise HTTPException(404, "Firmware não encontrado")
+    inv = {c["device_id"]: c for c in await inventory()}
+    ids = list(dict.fromkeys(req.device_ids))
+    incompat = [d for d in ids if inv.get(d, {}).get("modelo") and inv[d]["modelo"] != fw["modelo"]]
+    if incompat:
+        desc = ", ".join(f"{d} ({inv[d]['modelo']})" for d in incompat)
+        raise HTTPException(409, {"code": "modelo_incompativel", "device_ids": incompat,
+                                  "message": f"Modelo incompatível: {desc} ≠ {fw['modelo']}"})
+    sem_modelo = [d for d in ids if d in inv and not inv[d]["modelo"]]
+    if sem_modelo and not req.forcar_sem_modelo:
+        raise HTTPException(409, {"code": "sem_modelo", "device_ids": sem_modelo,
+                                  "message": f"Controladora(s) sem modelo informado: {', '.join(sem_modelo)} — confirme para forçar"})
     items, skipped = [], []
-    for did in dict.fromkeys(req.device_ids):
-        st = svc.states.get(did)
-        if not st or not st.online:
+    for did in ids:
+        c = inv.get(did)
+        if not c or not c["online"]:
             skipped.append({"device_id": did, "motivo": "offline"})
-        elif st.firmware_version == fw["versao"]:
+        elif c["versao"] == fw["versao"]:
             skipped.append({"device_id": did, "motivo": f"já está na {fw['versao']}"})
         else:
             items.append({"device_id": did, "status": "fila", "msg": None, "sent_at": None, "done_at": None})
     if not items:
         raise HTTPException(400, "Nenhuma controladora elegível (precisa estar ONLINE e com outra versão)")
     _batch = {
-        "firmware_id": fw_id, "versao": fw["versao"], "started_by": user.get("email"),
+        "firmware_id": fw_id, "versao": fw["versao"], "modelo": fw["modelo"], "started_by": user.get("email"),
         "started_at": now_iso(), "finished_at": None, "status": "executando",
         "message": None, "items": items, "skipped": skipped,
     }
-    _task = asyncio.create_task(_run_batch(fw, user.get("email")))
+    _task = asyncio.create_task(_run_batch(fw, set(sem_modelo)))
     await _push_batch()
     return _batch
 

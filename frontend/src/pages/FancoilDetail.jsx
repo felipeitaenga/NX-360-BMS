@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { ArrowLeft, Minus, Plus, Power, Hand, Wifi, WifiOff } from "lucide-react";
 import FancoilSchematicSVG from "../components/FancoilSchematicSVG";
 import { HistoryCharts } from "../components/HistoryCharts";
+import { FirmwareUpdateDialog } from "../components/firmware/FirmwareUpdateDialog";
 
 function IndicatorRow({ label, value, color, testid, pending }) {
   return (
@@ -117,9 +118,15 @@ export default function FancoilDetail() {
         </h1>
         <div className="text-muted-foreground text-sm mt-1 font-mono uppercase tracking-wider">
           {fancoil.description} • Dispositivo {fancoil.device_id}
+          {(st.modelo ?? fancoil.modelo) && <span data-testid="fancoil-model"> • {st.modelo ?? fancoil.modelo}</span>}
           <span className="font-mono normal-case text-muted-foreground" data-testid="fancoil-firmware-version">
             {" "}• Firmware {(st.firmware_version ?? fancoil.firmware_version) ? `v${st.firmware_version ?? fancoil.firmware_version}` : "—"}
           </span>
+          {user?.role === "admin" && (
+            <span className="ml-3 inline-block align-middle normal-case">
+              <FirmwareUpdateDialog deviceIds={[fancoil.device_id]} modelo={st.modelo ?? fancoil.modelo ?? null} versaoAtual={st.firmware_version ?? fancoil.firmware_version} testid="fancoil-fw-update-btn" />
+            </span>
+          )}
         </div>
       </div>
 

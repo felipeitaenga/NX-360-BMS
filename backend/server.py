@@ -17,7 +17,8 @@ from lighting_service import lighting_svc
 from routes import router
 from lighting_routes import router as lighting_router
 from password_reset import router as pwd_router
-from firmware_routes import router as firmware_router
+from firmware_routes import router as firmware_router, migrate_firmwares
+from controllers import router as controllers_router, registry, seed_models
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("app")
@@ -41,6 +42,7 @@ app.include_router(router)
 app.include_router(lighting_router)
 app.include_router(pwd_router)
 app.include_router(firmware_router)
+app.include_router(controllers_router)
 
 
 @app.get("/api/health")
@@ -52,6 +54,9 @@ async def health():
 async def _startup():
     await ensure_indexes()
     await run_all_seeds()
+    await seed_models()
+    await migrate_firmwares()
+    await registry.restore()
     lighting_svc.set_mqtt(svc)
     import asyncio
     lighting_svc.set_loop(asyncio.get_running_loop())

@@ -13,6 +13,7 @@ import { Checkbox } from "../components/ui/checkbox";
 import { toast } from "sonner";
 import { UserPlus, Trash2, KeyRound, Upload, RefreshCw, Settings as SettingsIcon, Pencil, Radio, Activity, Link2, ArrowDownToLine, Plus, Download, Database, AlertTriangle } from "lucide-react";
 import { FirmwareTab, rssiColor, fmtUptime } from "../components/FirmwareTab";
+import { ControllerModelsTab } from "../components/firmware/ControllerModels";
 import { useTelemetry } from "../context/TelemetryContext";
 
 const MODULES = [
@@ -602,6 +603,7 @@ export default function Admin() {
           <TabsTrigger value="settings" data-testid="admin-tab-settings">Broker e Parâmetros</TabsTrigger>
           <TabsTrigger value="diag" data-testid="admin-tab-diag">Diagnóstico MQTT</TabsTrigger>
           <TabsTrigger value="firmware" data-testid="admin-tab-firmware">Firmware das controladoras</TabsTrigger>
+          <TabsTrigger value="models" data-testid="admin-tab-models">Modelos de controladora</TabsTrigger>
           <TabsTrigger value="backup" data-testid="admin-tab-backup">Backup</TabsTrigger>
         </TabsList>
         <TabsContent value="users"><UsersTab /></TabsContent>
@@ -609,6 +611,7 @@ export default function Admin() {
         <TabsContent value="settings"><SettingsTab /></TabsContent>
         <TabsContent value="diag"><MqttDiagTab /></TabsContent>
         <TabsContent value="firmware"><FirmwareTab /></TabsContent>
+        <TabsContent value="models"><ControllerModelsTab /></TabsContent>
         <TabsContent value="backup"><BackupTab /></TabsContent>
       </Tabs>
     </div>

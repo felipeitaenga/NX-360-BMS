@@ -1,6 +1,6 @@
 {
-  "version": "1.8.0",
+  "version": "1.9.0",
   "build_date": "2026-10-18",
-  "codename": "Firmware 1.4 + OTA",
-  "notes": "Suporte ao firmware v1.4.x: comando × estado real (CMD/ESTADO/PRESSAO), VERSAO/RESET/RSSI/UPTIME/OTA, alarmes de reset crítico e Wi-Fi fraco, upload de .bin e OTA escalonado, senha do broker protegida."
+  "codename": "Catálogo de Controladoras",
+  "notes": "Catálogo de modelos, inventário de todas as controladoras (TIPO/MODELO/VERSAO), biblioteca de firmwares CATEGORIA → MODELO → VERSÃO com assinatura NXFW e bloqueio de modelo incompatível no OTA."
 }

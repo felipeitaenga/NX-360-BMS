@@ -19,6 +19,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional
 from db import db
 from ws_manager import manager
+from controllers import registry
 
 SNIFF_PER_DEVICE = 50
 SNIFF_GLOBAL = 300
@@ -30,7 +31,7 @@ WRITE_TOPICS = ("ESTADO/SET", "CMD/SET", "SETPOINT/SET", "PRESSAO/SET")
 EXTRA_FIELDS = (
     "cmd_real", "cmd_solicitado", "cmd_solicitado_at", "estado_real", "estado_solicitado",
     "estado_solicitado_at", "pressure_real", "reset_reason", "reset_at", "rssi", "uptime_min",
-    "ota_state", "ota_state_at",
+    "ota_state", "ota_state_at", "modelo", "tipo",
 )
 
 
@@ -79,6 +80,8 @@ class FancoilState:
         self.uptime_min: Optional[int] = None
         self.ota_state: Optional[str] = None
         self.ota_state_at: Optional[str] = None
+        self.modelo: Optional[str] = None
+        self.tipo: Optional[str] = None
         self.last_update: Optional[str] = None
         self.last_change_ts: float = time.time()
         # Schedule sync tracking (comparar o que o BMS enviou vs o que a controladora aplicou)
@@ -442,6 +445,7 @@ class MQTTService:
         #    "{prefix}/{device_id}/{var}" scheme — e.g., "/A100/TEMPERATURA")
         m = self.topic_mappings.get(topic)
         if m:
+            await registry.handle(m["device_id"], m["var"], payload)
             await self._apply_update(m["device_id"], m["var"], payload)
             return
         # 2) Standard prefix-based routing
@@ -454,6 +458,11 @@ class MQTTService:
             return
         device_id = parts[1]
         var = "/".join(parts[2:])
+        # Contrato comum (TIPO/MODELO/VERSAO/diagnósticos) — qualquer categoria
+        try:
+            await registry.handle(device_id, var, payload)
+        except Exception:
+            logger.exception("controller registry error")
         # 3) Delegate to lighting service if the sub-topic matches lighting pattern
         try:
             from lighting_service import lighting_svc
@@ -553,6 +562,9 @@ class MQTTService:
                 pass
         elif var == "VERSAO":
             st.firmware_version = payload.strip() or None
+            st.online = True
+        elif var in ("MODELO", "TIPO"):
+            setattr(st, var.lower(), payload.strip().upper() or None)
             st.online = True
         elif var == "RESET":
             st.reset_reason = payload.strip() or None

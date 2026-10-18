@@ -19,6 +19,7 @@ export function formatApiError(e) {
   const d = e?.response?.data?.detail;
   if (!d) return e?.message || "Erro desconhecido";
   if (typeof d === "string") return d;
+  if (d?.message) return d.message;
   if (Array.isArray(d)) return d.map((x) => x?.msg || JSON.stringify(x)).join(" ");
   return String(d);
 }
