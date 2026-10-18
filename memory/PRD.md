@@ -114,6 +114,9 @@ Firmware pronto (não mexer). Backend/UI alinhados ao protocolo:
 - `firmware_routes.py`: firmwares com modelo/categoria/assinatura, índice único (modelo, versao), migração antiga → FC300; upload lê assinatura `NXFW|TIPO|MODELO|VERSAO|`, exige 0xE9, modelo no catálogo, salva `<modelo>-<versao>.bin`; `GET /admin/firmware?categoria=&modelo=`, `GET /admin/firmware/arvore`, controladoras `?modelo=|grupo=sem_modelo|nao_catalogado`; envio 409 `modelo_incompativel` / `sem_modelo` (aceita `forcar_sem_modelo`, registrado no command_log); não exclui versão mais recente.
 - Frontend: `FirmwareTab.jsx` (árvore + versões + controladoras + "Atualizar desatualizadas"), `firmware/ControllerModels.jsx` (aba Modelos + dialog cadastrar), `firmware/FirmwareUpdateDialog.jsx` reutilizável (FancoilDetail admin), `firmware/fwUtils.js` (pré-visualização da assinatura no navegador). Subtítulo FancoilDetail mostra modelo.
 
+## Novidades (2026-10-18 — endereço público dos firmwares)
+- `FIRMWARE_PUBLIC_BASE` (opcional): URL do OTA = base + token/arquivo; sem ela, `FRONTEND_URL/api/firmware/files/`. `GET /api/admin/firmware/config`. Topo da página de firmware mostra o endereço em uso; dica na linha quando OTA/STATE = "erro: url nao permitida".
+
 ## Backlog
 - P1: Mapear MODO/STATUS fora do prefixo também (atualmente CJ031 só tem TEMPERATURA e VAG mapeados — faltam outros tópicos se o firmware publicar)
 - P1: dashboards por sistema (HVAC/ilum/hidráulica) e indicadores agregados por andar

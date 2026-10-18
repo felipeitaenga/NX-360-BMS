@@ -206,7 +206,14 @@ function ControllersTable({ ctrls, latest, items, sel, setSel }) {
                 <td className={`p-2 font-mono ${rssiColor(c.rssi)}`} data-testid={`fw-rssi-${c.device_id}`}>{c.rssi != null ? `${c.rssi} dBm` : "—"}</td>
                 <td className="p-2 font-mono">{fmtUptime(c.uptime_min)}</td>
                 <td className="p-2 font-mono max-w-[200px] truncate" title={c.reset_reason || ""}>{c.reset_reason || "—"}</td>
-                <td className={`p-2 font-mono ${otaStyle[item?.status] || "text-muted-foreground"}`} data-testid={`fw-ota-${c.device_id}`}>{otaLabel(item, c.ota_state)}</td>
+                <td className={`p-2 font-mono ${otaStyle[item?.status] || "text-muted-foreground"}`} data-testid={`fw-ota-${c.device_id}`}>
+                  {otaLabel(item, c.ota_state)}
+                  {/url n[aã]o permitida/i.test(`${c.ota_state || ""} ${item?.msg || ""}`) && (
+                    <div className="text-[10px] text-amber-300 font-sans mt-0.5" data-testid={`fw-url-hint-${c.device_id}`}>
+                      A controladora não aceita este endereço — confira o endereço base dos firmwares
+                    </div>
+                  )}
+                </td>
               </tr>
             );
           })}
@@ -304,10 +311,15 @@ export function FirmwareTab() {
   const { data: tree } = useQuery({ queryKey: ["fw-tree"], queryFn: async () => (await api.get("/admin/firmware/arvore")).data, refetchInterval: 10000 });
   const { data: models = [] } = useQuery({ queryKey: ["controller-models"], queryFn: async () => (await api.get("/admin/controller-models")).data });
   const { data: batch } = useQuery({ queryKey: ["fw-batch"], queryFn: async () => (await api.get("/admin/firmware/lote")).data, refetchInterval: 2000 });
+  const { data: cfg } = useQuery({ queryKey: ["fw-config"], queryFn: async () => (await api.get("/admin/firmware/config")).data });
   const cancel = async () => { await api.post("/admin/firmware/lote/cancelar"); qc.invalidateQueries({ queryKey: ["fw-batch"] }); };
   const newModel = (initial) => setModelDlg({ open: true, initial });
   return (
     <div className="space-y-4" data-testid="firmware-tab">
+      <div className="text-xs font-mono text-muted-foreground" data-testid="fw-base-url">
+        Endereço dos arquivos: <span className="text-sky-300">{cfg?.base_url || "…"}</span>
+        {cfg && !cfg.personalizado && <span className="ml-2 text-amber-300">(padrão — defina FIRMWARE_PUBLIC_BASE para usar outro endereço)</span>}
+      </div>
       <UploadCard models={models} onNewModel={newModel} />
       <BatchBanner batch={batch} onCancel={cancel} />
       <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-4">

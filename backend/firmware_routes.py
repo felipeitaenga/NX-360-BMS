@@ -39,9 +39,15 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _fw_base() -> str:
+    pub = os.environ.get("FIRMWARE_PUBLIC_BASE", "").strip()
+    if pub:
+        return pub.rstrip("/") + "/"
+    return os.environ["FRONTEND_URL"].rstrip("/") + "/api/firmware/files/"
+
+
 def _fw_url(d: dict) -> str:
-    base = os.environ["FRONTEND_URL"].rstrip("/")
-    return f"{base}/api/firmware/files/{d['token']}/{d['nome_arquivo']}"
+    return f"{_fw_base()}{d['token']}/{d['nome_arquivo']}"
 
 
 def _fw_out(d: dict) -> dict:
@@ -147,6 +153,11 @@ async def list_firmwares(categoria: str = "", modelo: str = "", _: dict = Depend
         f["mais_recente"] = latest.get(f["modelo"]) == f["versao"]
         f["n_controladoras"] = counts.get((f["modelo"], f["versao"]), 0)
     return fws
+
+
+@router.get("/admin/firmware/config")
+async def firmware_config(_: dict = Depends(require_admin)):
+    return {"base_url": _fw_base(), "personalizado": bool(os.environ.get("FIRMWARE_PUBLIC_BASE", "").strip())}
 
 
 @router.get("/admin/firmware/arvore")
