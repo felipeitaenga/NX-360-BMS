@@ -6,8 +6,8 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
+import { Tabs, TabsContent } from "../components/ui/tabs";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "../components/ui/dialog";
 import { Checkbox } from "../components/ui/checkbox";
 import { toast } from "sonner";
@@ -590,29 +590,64 @@ function SettingsTab() {
   );
 }
 
-export default function Admin() {
+const MENU = [
+  { group: "Usuários", items: [{ v: "users", l: "Usuários" }] },
+  { group: "Equipamentos", items: [{ v: "fancoils", l: "Fancoils" }, { v: "models", l: "Modelos de controladora" }, { v: "firmware", l: "Firmware das controladoras" }] },
+  { group: "Comunicação", items: [{ v: "settings", l: "Broker e Parâmetros" }, { v: "diag", l: "Diagnóstico MQTT" }] },
+  { group: "Sistema", items: [{ v: "backup", l: "Backup" }] },
+];
+
+function AdminNav({ tab, setTab }) {
   return (
-    <div className="p-6 lg:p-8 space-y-6" data-testid="admin-page">
+    <>
+      <div className="lg:hidden">
+        <Select value={tab} onValueChange={setTab}>
+          <SelectTrigger data-testid="admin-menu-select"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {MENU.map((g) => (
+              <SelectGroup key={g.group}>
+                <SelectLabel className="text-[10px] uppercase tracking-widest text-muted-foreground">{g.group}</SelectLabel>
+                {g.items.map((i) => <SelectItem key={i.v} value={i.v} data-testid={`admin-menu-option-${i.v}`}>{i.l}</SelectItem>)}
+              </SelectGroup>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <nav className="hidden lg:block space-y-5" data-testid="admin-menu">
+        {MENU.map((g) => (
+          <div key={g.group}>
+            <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground mb-1 px-3">{g.group}</div>
+            {g.items.map((i) => (
+              <button key={i.v} onClick={() => setTab(i.v)} data-testid={`admin-tab-${i.v}`}
+                className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors border-l-2 ${tab === i.v ? "bg-sky-500/10 text-sky-300 border-sky-400" : "border-transparent hover:bg-muted/40 text-foreground/80"}`}>
+                {i.l}
+              </button>
+            ))}
+          </div>
+        ))}
+      </nav>
+    </>
+  );
+}
+
+export default function Admin() {
+  const [tab, setTab] = useState("users");
+  return (
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6" data-testid="admin-page">
       <h1 className="font-display text-3xl lg:text-4xl font-black tracking-tight uppercase flex items-center gap-3">
         <SettingsIcon className="w-8 h-8 text-sky-400" /> Configurações
       </h1>
-      <Tabs defaultValue="users">
-        <TabsList>
-          <TabsTrigger value="users" data-testid="admin-tab-users">Usuários</TabsTrigger>
-          <TabsTrigger value="fancoils" data-testid="admin-tab-fancoils">Fancoils</TabsTrigger>
-          <TabsTrigger value="settings" data-testid="admin-tab-settings">Broker e Parâmetros</TabsTrigger>
-          <TabsTrigger value="diag" data-testid="admin-tab-diag">Diagnóstico MQTT</TabsTrigger>
-          <TabsTrigger value="firmware" data-testid="admin-tab-firmware">Firmware das controladoras</TabsTrigger>
-          <TabsTrigger value="models" data-testid="admin-tab-models">Modelos de controladora</TabsTrigger>
-          <TabsTrigger value="backup" data-testid="admin-tab-backup">Backup</TabsTrigger>
-        </TabsList>
-        <TabsContent value="users"><UsersTab /></TabsContent>
-        <TabsContent value="fancoils"><FancoilsTab /></TabsContent>
-        <TabsContent value="settings"><SettingsTab /></TabsContent>
-        <TabsContent value="diag"><MqttDiagTab /></TabsContent>
-        <TabsContent value="firmware"><FirmwareTab /></TabsContent>
-        <TabsContent value="models"><ControllerModelsTab /></TabsContent>
-        <TabsContent value="backup"><BackupTab /></TabsContent>
+      <Tabs value={tab} onValueChange={setTab} className="grid grid-cols-1 lg:grid-cols-[230px_minmax(0,1fr)] gap-6 items-start">
+        <AdminNav tab={tab} setTab={setTab} />
+        <div className="min-w-0">
+        <TabsContent value="users" className="mt-0"><UsersTab /></TabsContent>
+        <TabsContent value="fancoils" className="mt-0"><FancoilsTab /></TabsContent>
+        <TabsContent value="settings" className="mt-0"><SettingsTab /></TabsContent>
+        <TabsContent value="diag" className="mt-0"><MqttDiagTab /></TabsContent>
+        <TabsContent value="firmware" className="mt-0"><FirmwareTab /></TabsContent>
+        <TabsContent value="models" className="mt-0"><ControllerModelsTab /></TabsContent>
+        <TabsContent value="backup" className="mt-0"><BackupTab /></TabsContent>
+        </div>
       </Tabs>
     </div>
   );
