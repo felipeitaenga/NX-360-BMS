@@ -1,6 +1,6 @@
 {
-  "version": "1.9.0",
+  "version": "1.10.0",
   "build_date": "2026-10-18",
-  "codename": "Catálogo de Controladoras",
-  "notes": "Catálogo de modelos, inventário de todas as controladoras (TIPO/MODELO/VERSAO), biblioteca de firmwares CATEGORIA → MODELO → VERSÃO com assinatura NXFW e bloqueio de modelo incompatível no OTA."
+  "codename": "Escolha de Versão",
+  "notes": "Firmware: coluna só por modelo (com desatualizadas e busca), escolha explícita da versão a enviar, avisos de downgrade e versão sem assinatura, origem/destino no histórico."
 }

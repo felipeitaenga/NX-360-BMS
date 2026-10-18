@@ -124,7 +124,7 @@ export default function FancoilDetail() {
           </span>
           {user?.role === "admin" && (
             <span className="ml-3 inline-block align-middle normal-case">
-              <FirmwareUpdateDialog deviceIds={[fancoil.device_id]} modelo={st.modelo ?? fancoil.modelo ?? null} versaoAtual={st.firmware_version ?? fancoil.firmware_version} testid="fancoil-fw-update-btn" />
+              <FirmwareUpdateDialog targets={[{ device_id: fancoil.device_id, identificacao: fancoil.name, versao: st.firmware_version ?? fancoil.firmware_version }]} modelo={st.modelo ?? fancoil.modelo ?? null} testid="fancoil-fw-update-btn" />
             </span>
           )}
         </div>

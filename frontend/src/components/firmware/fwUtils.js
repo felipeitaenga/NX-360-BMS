@@ -24,6 +24,12 @@ export async function inspectFirmwareFile(file) {
   };
 }
 
+export const cmpVer = (a, b) => {
+  const pa = String(a || "0").split(".").map(Number), pb = String(b || "0").split(".").map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+  return 0;
+};
+
 export const otaStyle = {
   fila: "text-muted-foreground", enviado: "text-sky-400", ok: "text-emerald-400", erro: "text-red-400", timeout: "text-red-400",
 };

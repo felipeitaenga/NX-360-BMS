@@ -117,6 +117,11 @@ Firmware pronto (não mexer). Backend/UI alinhados ao protocolo:
 ## Novidades (2026-10-18 — endereço público dos firmwares)
 - `FIRMWARE_PUBLIC_BASE` (opcional): URL do OTA = base + token/arquivo; sem ela, `FRONTEND_URL/api/firmware/files/`. `GET /api/admin/firmware/config`. Topo da página de firmware mostra o endereço em uso; dica na linha quando OTA/STATE = "erro: url nao permitida".
 
+## Novidades (2026-10-18 — v1.10.0 Firmware: lista por modelo + escolha da versão)
+- Árvore: `GET /admin/firmware/arvore` agora devolve `modelos` (lista plana com categoria_label, n_versoes, n_controladoras, n_desatualizadas). Coluna esquerda só modelos (selo categoria, selo âmbar desatualizadas, busca >6), grupos "Modelo não informado"/"não catalogados" só quando houver; 1º modelo auto-selecionado.
+- Versões com radio "Enviar esta" (padrão mais recente); "Versão a enviar: vX (mais recente|anterior)"; botões "Atualizar selecionadas" e "Atualizar todas para vX (N)"; checkbox desabilitado se já na versão; confirmação com aviso de downgrade (exige marcar) e "sem assinatura" (`firmware/OtaWarnings.jsx`). FirmwareUpdateDialog recebe `targets` e pré-seleciona a mais recente.
+- command_log do OTA: firmware_id, versao_origem, versao_destino.
+
 ## Backlog
 - P1: Mapear MODO/STATUS fora do prefixo também (atualmente CJ031 só tem TEMPERATURA e VAG mapeados — faltam outros tópicos se o firmware publicar)
 - P1: dashboards por sistema (HVAC/ilum/hidráulica) e indicadores agregados por andar

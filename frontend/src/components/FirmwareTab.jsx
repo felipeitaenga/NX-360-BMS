@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, formatApiError } from "../lib/api";
 import { Card } from "./ui/card";
@@ -8,14 +8,14 @@ import { Label } from "./ui/label";
 import { Checkbox } from "./ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
-  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "./ui/alert-dialog";
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "./ui/dialog";
 import { toast } from "sonner";
-import { Upload, Trash2, Cpu, AlertTriangle, Square, Copy, HelpCircle, PackageX, Plus } from "lucide-react";
+import { Upload, Trash2, Cpu, AlertTriangle, Square, Copy, HelpCircle, PackageX, Plus, Search } from "lucide-react";
 import { rssiColor, fmtUptime, fmtDate, inspectFirmwareFile, otaLabel, otaStyle, CAT_LABEL } from "./firmware/fwUtils";
 import { FirmwareUpdateDialog } from "./firmware/FirmwareUpdateDialog";
 import { ModelFormDialog } from "./firmware/ControllerModels";
+import { OtaWarnings, downgrades } from "./firmware/OtaWarnings";
 
 export { rssiColor, fmtUptime };
 
@@ -95,49 +95,65 @@ function UploadCard({ models, onNewModel }) {
   );
 }
 
-// ---------- Árvore CATEGORIA → MODELO ----------
-function TreeItem({ active, onClick, children, dim, testid }) {
+// ---------- Coluna da esquerda: só modelos ----------
+function ListItem({ active, onClick, children, testid }) {
   return (
     <button onClick={onClick} data-testid={testid}
-      className={`w-full text-left px-3 py-2 rounded-md text-xs transition-colors ${active ? "bg-sky-500/15 text-sky-200 border border-sky-500/30" : "hover:bg-muted/40 border border-transparent"} ${dim ? "opacity-50" : ""}`}>
+      className={`w-full text-left px-3 py-2 rounded-md text-xs transition-colors border ${active ? "bg-sky-500/15 text-sky-100 border-sky-500/40" : "hover:bg-muted/40 border-transparent"}`}>
       {children}
     </button>
   );
 }
 
-function FirmwareTree({ tree, sel, setSel }) {
+function ModelList({ tree, sel, setSel }) {
+  const [q, setQ] = useState("");
   if (!tree) return null;
+  const modelos = tree.modelos.filter((m) => !q || `${m.modelo} ${m.nome}`.toLowerCase().includes(q.toLowerCase()));
+  const extras = tree.sem_modelo > 0 || tree.nao_catalogados.length > 0;
   return (
-    <Card className="p-3 space-y-4 h-fit" data-testid="fw-tree">
-      {tree.categorias.map((c) => (
-        <div key={c.categoria} className={c.modelos.length ? "" : "opacity-40"} data-testid={`fw-tree-cat-${c.categoria}`}>
-          <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground mb-1">{c.label}</div>
-          {c.modelos.length ? c.modelos.map((m) => (
-            <TreeItem key={m.modelo} active={sel.modelo === m.modelo} onClick={() => setSel({ modelo: m.modelo })} testid={`fw-tree-model-${m.modelo}`}>
-              <div className="font-mono font-bold">{m.modelo}</div>
-              <div className="text-muted-foreground">{m.n_controladoras} controladora(s) · {m.n_versoes} versão(ões)</div>
-            </TreeItem>
-          )) : <div className="text-xs text-muted-foreground px-3">sem modelos</div>}
+    <Card className="p-3 space-y-1 h-fit" data-testid="fw-tree">
+      {tree.modelos.length > 6 && (
+        <div className="relative mb-2">
+          <Search className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar modelo…" className="h-8 pl-7 text-xs" data-testid="fw-model-search" />
         </div>
+      )}
+      {modelos.map((m) => (
+        <ListItem key={m.modelo} active={sel.modelo === m.modelo} onClick={() => setSel({ modelo: m.modelo })} testid={`fw-tree-model-${m.modelo}`}>
+          <div className="flex items-center gap-2">
+            <span className="font-mono font-bold text-sm">{m.modelo}</span>
+            <span className="ml-auto text-[9px] lowercase px-1.5 py-0.5 rounded border border-border text-muted-foreground">{m.categoria_label}</span>
+          </div>
+          <div className="text-muted-foreground mt-0.5">{m.n_controladoras} controladora(s) · {m.n_versoes} versão(ões)</div>
+          {m.n_desatualizadas > 0 && (
+            <span className="inline-block mt-1 text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300" data-testid={`fw-tree-outdated-${m.modelo}`}>{m.n_desatualizadas} desatualizada(s)</span>
+          )}
+        </ListItem>
       ))}
-      <div className="border-t border-border pt-3 space-y-1">
-        <TreeItem active={sel.grupo === "sem_modelo"} onClick={() => setSel({ grupo: "sem_modelo" })} dim={!tree.sem_modelo} testid="fw-tree-sem-modelo">
-          <div className="flex items-center gap-1 font-bold"><HelpCircle className="w-3 h-3" /> Modelo não informado</div>
-          <div className="text-muted-foreground">{tree.sem_modelo} controladora(s)</div>
-        </TreeItem>
-        <TreeItem active={sel.grupo === "nao_catalogado"} onClick={() => setSel({ grupo: "nao_catalogado" })} dim={!tree.nao_catalogados.length} testid="fw-tree-nao-catalogado">
-          <div className="flex items-center gap-1 font-bold"><PackageX className="w-3 h-3" /> Modelos não catalogados</div>
-          <div className="text-muted-foreground">{tree.nao_catalogados.map((n) => n.modelo).join(", ") || "nenhum"}</div>
-        </TreeItem>
-      </div>
+      {!modelos.length && <div className="text-xs text-muted-foreground px-3 py-2">Nenhum modelo com controladoras ou versões.</div>}
+      {extras && (
+        <div className="border-t border-border pt-2 mt-2 space-y-1">
+          {tree.sem_modelo > 0 && (
+            <ListItem active={sel.grupo === "sem_modelo"} onClick={() => setSel({ grupo: "sem_modelo" })} testid="fw-tree-sem-modelo">
+              <div className="flex items-center gap-1 font-bold"><HelpCircle className="w-3 h-3" /> Modelo não informado</div>
+              <div className="text-muted-foreground">{tree.sem_modelo} controladora(s)</div>
+            </ListItem>
+          )}
+          {tree.nao_catalogados.length > 0 && (
+            <ListItem active={sel.grupo === "nao_catalogado"} onClick={() => setSel({ grupo: "nao_catalogado" })} testid="fw-tree-nao-catalogado">
+              <div className="flex items-center gap-1 font-bold"><PackageX className="w-3 h-3" /> Modelos não catalogados</div>
+              <div className="text-muted-foreground">{tree.nao_catalogados.map((n) => n.modelo).join(", ")}</div>
+            </ListItem>
+          )}
+        </div>
+      )}
     </Card>
   );
 }
 
-// ---------- Versões do modelo ----------
-function VersionsTable({ modelo, batch }) {
+// ---------- Versões do modelo (com escolha da versão a enviar) ----------
+function VersionsTable({ modelo, fws, chosenId, setChosenId, batch }) {
   const refresh = useInvalidateAll();
-  const { data: fws = [] } = useQuery({ queryKey: ["firmwares", modelo], queryFn: async () => (await api.get("/admin/firmware", { params: { modelo } })).data });
   const del = async (f) => {
     if (!window.confirm(`Excluir ${f.modelo} v${f.versao}?`)) return;
     try { await api.delete(`/admin/firmware/${f.id}`); refresh(); } catch (e) { toast.error(formatApiError(e)); }
@@ -149,12 +165,15 @@ function VersionsTable({ modelo, batch }) {
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="bg-muted/40 text-left"><tr>
-            <th className="p-2">Versão</th><th className="p-2">Data</th><th className="p-2">Tamanho</th><th className="p-2">MD5</th>
+            <th className="p-2 w-24">Enviar esta</th><th className="p-2">Versão</th><th className="p-2">Data</th><th className="p-2">Tamanho</th><th className="p-2">MD5</th>
             <th className="p-2">Notas</th><th className="p-2">Controladoras</th><th className="p-2"></th>
           </tr></thead>
           <tbody>
             {fws.map((f) => (
-              <tr key={f.id} className="border-t border-border/60" data-testid={`fw-row-${f.modelo}-${f.versao}`}>
+              <tr key={f.id} className={`border-t border-border/60 ${chosenId === f.id ? "bg-sky-500/5" : ""}`} data-testid={`fw-row-${f.modelo}-${f.versao}`}>
+                <td className="p-2 text-center">
+                  <input type="radio" name={`fw-choose-${modelo}`} checked={chosenId === f.id} onChange={() => setChosenId(f.id)} className="accent-sky-500 w-4 h-4 cursor-pointer" data-testid={`fw-choose-${f.versao}`} />
+                </td>
                 <td className="p-2 font-mono font-bold text-sky-400 whitespace-nowrap">
                   v{f.versao}
                   {f.mais_recente && <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300" data-testid={`fw-latest-${f.modelo}`}>MAIS RECENTE</span>}
@@ -173,7 +192,7 @@ function VersionsTable({ modelo, batch }) {
                 </td>
               </tr>
             ))}
-            {!fws.length && <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">Nenhuma versão deste modelo.</td></tr>}
+            {!fws.length && <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">Nenhuma versão deste modelo.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -182,7 +201,7 @@ function VersionsTable({ modelo, batch }) {
 }
 
 // ---------- Controladoras ----------
-function ControllersTable({ ctrls, latest, items, sel, setSel }) {
+function ControllersTable({ ctrls, target, items, sel, setSel }) {
   const toggle = (id) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   return (
     <div className="overflow-x-auto">
@@ -194,10 +213,13 @@ function ControllersTable({ ctrls, latest, items, sel, setSel }) {
         <tbody>
           {ctrls.map((c) => {
             const item = items[c.device_id];
-            const vColor = !c.versao ? "text-muted-foreground" : latest && c.versao === latest ? "text-emerald-400" : latest ? "text-amber-400" : "text-sky-400";
+            const same = target && c.versao === target;
+            const vColor = !c.versao ? "text-muted-foreground" : !target ? "text-sky-400" : same ? "text-emerald-400" : "text-amber-400";
             return (
               <tr key={c.device_id} className="border-t border-border/60" data-testid={`fw-ctrl-row-${c.device_id}`}>
-                <td className="p-2"><Checkbox checked={sel.has(c.device_id)} onCheckedChange={() => toggle(c.device_id)} data-testid={`fw-select-${c.device_id}`} /></td>
+                <td className="p-2" title={same ? "já está nesta versão" : ""}>
+                  <Checkbox checked={sel.has(c.device_id)} disabled={same} onCheckedChange={() => toggle(c.device_id)} data-testid={`fw-select-${c.device_id}`} />
+                </td>
                 <td className="p-2 font-bold">{c.identificacao || <span className="text-muted-foreground font-normal">não cadastrado</span>}</td>
                 <td className="p-2 font-mono">{c.device_id}</td>
                 <td className="p-2 font-mono">{c.modelo || <span className="text-amber-300">não informado</span>}</td>
@@ -242,29 +264,98 @@ function BatchBanner({ batch, onCancel }) {
   );
 }
 
-function GroupPanel({ sel, tree, batch, onNewModel }) {
+// ---------- Confirmação do envio da versão escolhida ----------
+function SendConfirm({ open, setOpen, fw, targets, onDone }) {
+  const [downOk, setDownOk] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (open) setDownOk(false); }, [open]);
+  const needDown = downgrades(fw, targets).length > 0;
+  const send = async () => {
+    setBusy(true);
+    try {
+      const r = await api.post(`/admin/firmware/${fw.id}/enviar`, { device_ids: targets.map((t) => t.device_id) });
+      toast.success(`Lote v${fw.versao} iniciado: ${r.data.items.length} controladora(s)`);
+      setOpen(false);
+      onDone();
+    } catch (e) { toast.error(formatApiError(e)); }
+    setBusy(false);
+  };
+  if (!fw) return null;
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent data-testid="fw-send-confirm">
+        <DialogHeader>
+          <DialogTitle>Enviar {fw.modelo} v{fw.versao} para {targets.length} controladora(s)?</DialogTitle>
+          <DialogDescription>
+            {targets.map((t) => `${t.identificacao || t.device_id} (v${t.versao || "?"})`).join(", ")}. O equipamento continua operando; a controladora reinicia ao final. Envio uma por vez — pausa se alguma falhar.
+          </DialogDescription>
+        </DialogHeader>
+        <OtaWarnings fw={fw} targets={targets} confirmed={downOk} setConfirmed={setDownOk} />
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+          <Button disabled={busy || (needDown && !downOk)} onClick={send} data-testid="fw-send-confirm-btn">Atualizar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ModelPanel({ modelo, tree, batch }) {
   const refresh = useInvalidateAll();
   const [picked, setPicked] = useState(new Set());
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const params = sel.modelo ? { modelo: sel.modelo } : { grupo: sel.grupo };
-  const { data: ctrls = [] } = useQuery({ queryKey: ["fw-ctrls", params], queryFn: async () => (await api.get("/admin/firmware/controladoras", { params })).data, refetchInterval: 3000 });
-  const { data: fws = [] } = useQuery({ queryKey: ["firmwares", sel.modelo], queryFn: async () => (await api.get("/admin/firmware", { params: { modelo: sel.modelo } })).data, enabled: !!sel.modelo });
-  const latestFw = fws.find((f) => f.mais_recente);
+  const [chosenId, setChosenId] = useState("");
+  const [confirm, setConfirm] = useState(null);
+  const { data: ctrls = [] } = useQuery({ queryKey: ["fw-ctrls", { modelo }], queryFn: async () => (await api.get("/admin/firmware/controladoras", { params: { modelo } })).data, refetchInterval: 3000 });
+  const { data: fws = [] } = useQuery({ queryKey: ["firmwares", modelo], queryFn: async () => (await api.get("/admin/firmware", { params: { modelo } })).data });
+  useEffect(() => {
+    if (!fws.find((f) => f.id === chosenId) && fws.length) setChosenId((fws.find((f) => f.mais_recente) || fws[0]).id);
+  }, [fws, chosenId]);
+  const fw = fws.find((f) => f.id === chosenId);
+  useEffect(() => {
+    setPicked((p) => new Set([...p].filter((id) => ctrls.find((c) => c.device_id === id)?.versao !== fw?.versao)));
+  }, [fw, ctrls]);
   const items = Object.fromEntries((batch?.items || []).map((i) => [i.device_id, i]));
-  const outdated = latestFw ? ctrls.filter((c) => c.online && c.versao !== latestFw.versao) : [];
-  const model = tree?.categorias.flatMap((c) => c.modelos).find((m) => m.modelo === sel.modelo);
-  const sendOutdated = async () => {
-    try {
-      const r = await api.post(`/admin/firmware/${latestFw.id}/enviar`, { device_ids: outdated.map((c) => c.device_id) });
-      toast.success(`Lote iniciado: ${r.data.items.length} controladora(s)`);
-      refresh();
-    } catch (e) { toast.error(formatApiError(e)); }
-  };
-  const title = sel.modelo ? `${sel.modelo} · ${model?.nome || ""}` : sel.grupo === "sem_modelo" ? "Modelo não informado" : "Modelos não catalogados";
+  const allTargets = fw ? ctrls.filter((c) => c.online && c.versao !== fw.versao) : [];
+  const pickedTargets = ctrls.filter((c) => picked.has(c.device_id));
+  const model = tree?.modelos.find((m) => m.modelo === modelo);
+  const busyBatch = batch?.status === "executando";
   return (
     <div className="space-y-4">
-      {sel.modelo && <VersionsTable modelo={sel.modelo} batch={batch} />}
-      {sel.grupo === "nao_catalogado" && tree?.nao_catalogados.map((n) => (
+      <VersionsTable modelo={modelo} fws={fws} chosenId={chosenId} setChosenId={setChosenId} batch={batch} />
+      <Card className="p-0 overflow-hidden">
+        <div className="p-3 border-b border-border flex flex-wrap items-center gap-2">
+          <div className="font-display text-sm uppercase tracking-widest flex items-center gap-2"><Cpu className="w-4 h-4 text-sky-400" /> {modelo} · {model?.nome || ""} — controladoras ({ctrls.length})</div>
+          {fw && (
+            <div className="mr-auto ml-3 text-sm font-mono px-2 py-1 rounded border border-sky-500/40 bg-sky-500/10" data-testid="fw-chosen-version">
+              Versão a enviar: <b className="text-sky-300">v{fw.versao}</b> <span className={fw.mais_recente ? "text-emerald-300" : "text-amber-300"}>({fw.mais_recente ? "mais recente" : "anterior"})</span>
+            </div>
+          )}
+          <Button size="sm" variant="outline" disabled={!fw || !picked.size || busyBatch} onClick={() => setConfirm(pickedTargets)} data-testid="fw-update-selected-btn">
+            Atualizar selecionadas ({picked.size})
+          </Button>
+          <Button size="sm" disabled={!fw || !allTargets.length || busyBatch} onClick={() => setConfirm(allTargets)} data-testid="fw-update-all-btn">
+            Atualizar todas para v{fw?.versao || "—"} ({allTargets.length})
+          </Button>
+        </div>
+        <div className="px-3 py-2 text-xs bg-amber-500/10 text-amber-300 border-b border-amber-500/30 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0" /> Recomendação: atualize primeiro UMA controladora de teste. O lote é escalonado (uma por vez) e pausa na primeira falha. Só versões do mesmo modelo podem ser enviadas.
+        </div>
+        <ControllersTable ctrls={ctrls} target={fw?.versao} items={items} sel={picked} setSel={setPicked} />
+      </Card>
+      <SendConfirm open={!!confirm} setOpen={(o) => !o && setConfirm(null)} fw={fw} targets={confirm || []} onDone={() => { setPicked(new Set()); refresh(); }} />
+    </div>
+  );
+}
+
+function GroupPanel({ grupo, tree, batch, onNewModel }) {
+  const refresh = useInvalidateAll();
+  const [picked, setPicked] = useState(new Set());
+  const { data: ctrls = [] } = useQuery({ queryKey: ["fw-ctrls", { grupo }], queryFn: async () => (await api.get("/admin/firmware/controladoras", { params: { grupo } })).data, refetchInterval: 3000 });
+  const items = Object.fromEntries((batch?.items || []).map((i) => [i.device_id, i]));
+  const targets = ctrls.filter((c) => picked.has(c.device_id));
+  return (
+    <div className="space-y-4">
+      {grupo === "nao_catalogado" && tree?.nao_catalogados.map((n) => (
         <Card key={n.modelo} className="p-3 flex items-center gap-3 text-sm border-amber-500/30" data-testid={`fw-uncat-${n.modelo}`}>
           <PackageX className="w-4 h-4 text-amber-400" />
           <span className="font-mono font-bold">{n.modelo}</span><span className="text-muted-foreground">{n.n_controladoras} controladora(s) · {CAT_LABEL[n.categoria]}</span>
@@ -273,45 +364,33 @@ function GroupPanel({ sel, tree, batch, onNewModel }) {
       ))}
       <Card className="p-0 overflow-hidden">
         <div className="p-3 border-b border-border flex flex-wrap items-center gap-2">
-          <div className="font-display text-sm uppercase tracking-widest flex items-center gap-2 mr-auto"><Cpu className="w-4 h-4 text-sky-400" /> {title} — controladoras ({ctrls.length})</div>
-          <FirmwareUpdateDialog deviceIds={[...picked]} modelo={sel.modelo || null} label={`Atualizar selecionadas (${picked.size})`} onSent={() => { setPicked(new Set()); refresh(); }} testid="fw-update-selected-btn" />
-          {sel.modelo && (
-            <Button size="sm" disabled={!outdated.length || batch?.status === "executando"} onClick={() => setConfirmOpen(true)} data-testid="fw-update-outdated-btn">
-              Atualizar desatualizadas ({outdated.length})
-            </Button>
+          <div className="font-display text-sm uppercase tracking-widest flex items-center gap-2 mr-auto">
+            <Cpu className="w-4 h-4 text-sky-400" /> {grupo === "sem_modelo" ? "Modelo não informado" : "Modelos não catalogados"} — controladoras ({ctrls.length})
+          </div>
+          {grupo === "sem_modelo" && (
+            <FirmwareUpdateDialog targets={targets} modelo={null} label={`Atualizar selecionadas (${picked.size})`} onSent={() => { setPicked(new Set()); refresh(); }} testid="fw-update-selected-btn" />
           )}
         </div>
-        <div className="px-3 py-2 text-xs bg-amber-500/10 text-amber-300 border-b border-amber-500/30 flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 shrink-0" /> Recomendação: atualize primeiro UMA controladora de teste. O lote é escalonado (uma por vez) e pausa na primeira falha. Só versões do mesmo modelo podem ser enviadas.
-        </div>
-        <ControllersTable ctrls={ctrls} latest={latestFw?.versao} items={items} sel={picked} setSel={setPicked} />
+        <ControllersTable ctrls={ctrls} target={null} items={items} sel={picked} setSel={setPicked} />
       </Card>
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Atualizar {outdated.length} controladora(s) {sel.modelo} para v{latestFw?.versao}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Somente as ONLINE e desatualizadas: {outdated.map((c) => c.identificacao || c.device_id).join(", ")}. O equipamento continua operando; a controladora reinicia ao final. Envio uma por vez — pausa se alguma falhar.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={sendOutdated} data-testid="fw-confirm-outdated">Atualizar</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
 
 export function FirmwareTab() {
   const qc = useQueryClient();
-  const [sel, setSel] = useState({ modelo: "FC300" });
+  const [sel, setSel] = useState(null);
   const [modelDlg, setModelDlg] = useState({ open: false, initial: null });
   const { data: tree } = useQuery({ queryKey: ["fw-tree"], queryFn: async () => (await api.get("/admin/firmware/arvore")).data, refetchInterval: 10000 });
   const { data: models = [] } = useQuery({ queryKey: ["controller-models"], queryFn: async () => (await api.get("/admin/controller-models")).data });
   const { data: batch } = useQuery({ queryKey: ["fw-batch"], queryFn: async () => (await api.get("/admin/firmware/lote")).data, refetchInterval: 2000 });
   const { data: cfg } = useQuery({ queryKey: ["fw-config"], queryFn: async () => (await api.get("/admin/firmware/config")).data });
+  const effectiveSel = useMemo(() => {
+    if (sel) return sel;
+    if (tree?.modelos.length) return { modelo: tree.modelos[0].modelo };
+    if (tree?.sem_modelo) return { grupo: "sem_modelo" };
+    return {};
+  }, [sel, tree]);
   const cancel = async () => { await api.post("/admin/firmware/lote/cancelar"); qc.invalidateQueries({ queryKey: ["fw-batch"] }); };
   const newModel = (initial) => setModelDlg({ open: true, initial });
   return (
@@ -322,9 +401,10 @@ export function FirmwareTab() {
       </div>
       <UploadCard models={models} onNewModel={newModel} />
       <BatchBanner batch={batch} onCancel={cancel} />
-      <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-4">
-        <FirmwareTree tree={tree} sel={sel} setSel={setSel} />
-        <GroupPanel key={sel.modelo || sel.grupo} sel={sel} tree={tree} batch={batch} onNewModel={newModel} />
+      <div className="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-4">
+        <ModelList tree={tree} sel={effectiveSel} setSel={setSel} />
+        {effectiveSel.modelo && <ModelPanel key={effectiveSel.modelo} modelo={effectiveSel.modelo} tree={tree} batch={batch} />}
+        {effectiveSel.grupo && <GroupPanel key={effectiveSel.grupo} grupo={effectiveSel.grupo} tree={tree} batch={batch} onNewModel={newModel} />}
       </div>
       <ModelFormDialog open={modelDlg.open} onOpenChange={(o) => setModelDlg((p) => ({ ...p, open: o }))} initial={modelDlg.initial} editing={false} />
     </div>

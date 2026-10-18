@@ -169,9 +169,20 @@ async def firmware_tree(_: dict = Depends(require_admin)):
         n_ver[f["modelo"]] = n_ver.get(f["modelo"], 0) + 1
     latest = await _latest_by_model()
     n_ctrl: dict = {}
+    n_out: dict = {}
     for c in inv:
         if c["modelo"]:
             n_ctrl[c["modelo"]] = n_ctrl.get(c["modelo"], 0) + 1
+            lt = latest.get(c["modelo"])
+            if lt and c["versao"] != lt:
+                n_out[c["modelo"]] = n_out.get(c["modelo"], 0) + 1
+    modelos_flat = sorted(
+        [{**m, "categoria_label": CATEGORIA_LABEL.get(m["categoria"], m["categoria"]),
+          "n_versoes": n_ver.get(m["modelo"], 0), "n_controladoras": n_ctrl.get(m["modelo"], 0),
+          "n_desatualizadas": n_out.get(m["modelo"], 0), "versao_mais_recente": latest.get(m["modelo"])}
+         for m in catalog.values() if n_ver.get(m["modelo"]) or n_ctrl.get(m["modelo"])],
+        key=lambda x: x["modelo"],
+    )
     cats = []
     for cat in CATEGORIAS:
         modelos = [
@@ -187,6 +198,7 @@ async def firmware_tree(_: dict = Depends(require_admin)):
             e = nao_cat.setdefault(c["modelo"], {"modelo": c["modelo"], "categoria": c["categoria"], "n_controladoras": 0})
             e["n_controladoras"] += 1
     return {
+        "modelos": modelos_flat,
         "categorias": cats,
         "sem_modelo": sum(1 for c in inv if not c["modelo"]),
         "nao_catalogados": sorted(nao_cat.values(), key=lambda x: x["modelo"]),
@@ -284,7 +296,9 @@ async def _run_batch(fw: dict, forced: set):
             svc._client.publish(topic, payload, qos=1, retain=False)
             await db.command_log.insert_one({
                 "device_id": did, "user_id": _batch["started_by"], "topic": topic, "kind": "OTA/SET",
-                "value": fw["versao"], "modelo": fw["modelo"], "previous_value": str(_live(did)["versao"]),
+                "value": fw["versao"], "modelo": fw["modelo"], "firmware_id": str(fw["_id"]),
+                "versao_origem": _live(did)["versao"], "versao_destino": fw["versao"],
+                "previous_value": str(_live(did)["versao"]),
                 "forcado_sem_modelo": did in forced,
                 "timestamp": item["sent_at"], "confirmed": False, "confirmed_at": None,
             })
