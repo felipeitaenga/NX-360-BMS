@@ -572,10 +572,19 @@ async def report_hours_on(days: int = 30, user: dict = Depends(get_current_user)
 
 
 # =============== ADMIN / SETTINGS ===============
+def _redact_broker(s: dict) -> dict:
+    b = dict(s.get("broker") or {})
+    b["password_set"] = bool(b.pop("password", ""))
+    b["password"] = ""
+    s["broker"] = b
+    return s
+
+
 @router.get("/admin/settings")
 async def get_settings(_: dict = Depends(require_admin)):
     s = await db.settings.find_one({"_id": "global"}) or {}
     s.pop("_id", None)
+    _redact_broker(s)
     s["broker_connected"] = svc.connected
     s["broker_last_error"] = svc.last_error
     s["simulation_enabled"] = s.get("simulation_enabled", True)
@@ -585,14 +594,20 @@ async def get_settings(_: dict = Depends(require_admin)):
 @router.put("/admin/settings")
 async def update_settings(req: SettingsUpdate, _: dict = Depends(require_admin)):
     upd = {k: v for k, v in req.dict().items() if v is not None}
-    if "broker" in upd and isinstance(upd["broker"], dict) is False:
-        upd["broker"] = upd["broker"]
+    if "broker" in upd:
+        # Senha em branco = manter a atual (a API nunca devolve a senha)
+        cur = (await db.settings.find_one({"_id": "global"}) or {}).get("broker") or {}
+        if not upd["broker"].get("password"):
+            upd["broker"]["password"] = cur.get("password", "")
+        if upd["broker"].pop("clear_password", False):
+            upd["broker"]["password"] = ""
     await db.settings.update_one({"_id": "global"}, {"$set": upd}, upsert=True)
     # restart svc if broker/simulation changed
     if "broker" in upd or "simulation_enabled" in upd:
         await svc.restart()
     s = await db.settings.find_one({"_id": "global"}) or {}
     s.pop("_id", None)
+    _redact_broker(s)
     s["broker_connected"] = svc.connected
     s["broker_last_error"] = svc.last_error
     return s
@@ -611,8 +626,11 @@ class BrokerTestReq(BaseModel):
 async def test_broker_connection(req: BrokerTestReq, _: dict = Depends(require_admin)):
     """Try to connect to the broker without touching the running client. Blocking op; short timeout."""
     import asyncio as _asyncio
+    password = req.password
+    if not password:
+        password = ((await db.settings.find_one({"_id": "global"}) or {}).get("broker") or {}).get("password", "")
     result = await _asyncio.to_thread(
-        _sync_test, req.host, req.port, req.username, req.password, req.tls, req.client_id
+        _sync_test, req.host, req.port, req.username, password, req.tls, req.client_id
     )
     return result
 

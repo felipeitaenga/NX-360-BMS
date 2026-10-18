@@ -427,6 +427,7 @@ export default function ProgramacaoHoraria() {
           A programação é <b>enviada à controladora via MQTT</b> (tópico <code className="font-mono text-xs">SCHEDULE/SET</code>, retained).
           O ESP32 armazena e executa internamente. Em <b>Automático</b> o fancoil segue a programação;
           em <b>Forçado</b> segue apenas o comando manual até voltar para Automático.
+          A controladora publica o estado real em <code className="font-mono text-xs">CMD</code>/<code className="font-mono text-xs">ESTADO</code>/<code className="font-mono text-xs">PRESSAO</code> (sem /SET) e nunca ecoa em /SET.
         </div>
         <Button variant="outline" size="sm" className="mt-3 gap-2" onClick={copyFirmwarePrompt} data-testid="copy-firmware-prompt-btn">
           <Copy className="w-4 h-4" /> Copiar prompt do firmware ESP32

@@ -27,6 +27,22 @@ logger = logging.getLogger("mqtt")
 
 READ_TOPICS = ("ONLINE", "STATUS", "MODO", "TEMPERATURA", "VAG")
 WRITE_TOPICS = ("ESTADO/SET", "CMD/SET", "SETPOINT/SET", "PRESSAO/SET")
+EXTRA_FIELDS = (
+    "cmd_real", "cmd_solicitado", "cmd_solicitado_at", "estado_real", "estado_solicitado",
+    "estado_solicitado_at", "pressure_real", "reset_reason", "reset_at", "rssi", "uptime_min",
+    "ota_state", "ota_state_at",
+)
+
+
+def _bool(payload: str) -> bool:
+    return payload.lower() == "true" or payload == "1"
+
+
+def _int(payload: str) -> Optional[int]:
+    try:
+        return int(float(payload))
+    except ValueError:
+        return None
 
 
 def now_iso() -> str:
@@ -49,6 +65,20 @@ class FancoilState:
         self.vag: Optional[float] = None
         self.pressure: Optional[float] = None  # % — supervisório envia via PRESSAO/SET
         self.firmware_version: Optional[str] = None
+        # Firmware v1.4+: comando (/SET, supervisório) separado do estado real (publicado pela controladora)
+        self.cmd_real: Optional[bool] = None
+        self.cmd_solicitado: Optional[bool] = None
+        self.cmd_solicitado_at: Optional[str] = None
+        self.estado_real: Optional[bool] = None
+        self.estado_solicitado: Optional[bool] = None
+        self.estado_solicitado_at: Optional[str] = None
+        self.pressure_real: Optional[float] = None
+        self.reset_reason: Optional[str] = None
+        self.reset_at: Optional[str] = None
+        self.rssi: Optional[int] = None
+        self.uptime_min: Optional[int] = None
+        self.ota_state: Optional[str] = None
+        self.ota_state_at: Optional[str] = None
         self.last_update: Optional[str] = None
         self.last_change_ts: float = time.time()
         # Schedule sync tracking (comparar o que o BMS enviou vs o que a controladora aplicou)
@@ -78,6 +108,11 @@ class FancoilState:
             return None
         return self._norm_schedule(self.schedule_sent_payload) == self._norm_schedule(self.schedule_applied_payload)
 
+    def sync_effective(self):
+        """UI usa cmd/estado: real quando existir, senão o solicitado (firmware antigo)."""
+        self.cmd = self.cmd_real if self.cmd_real is not None else self.cmd_solicitado
+        self.estado = self.estado_real if self.estado_real is not None else self.estado_solicitado
+
     def to_dict(self) -> dict:
         return {
             "device_id": self.device_id,
@@ -92,6 +127,7 @@ class FancoilState:
             "vag": self.vag,
             "pressure": self.pressure,
             "firmware_version": self.firmware_version,
+            **{k: getattr(self, k) for k in EXTRA_FIELDS},
             "last_update": self.last_update,
             "schedule_sent_at": self.schedule_sent_at,
             "schedule_applied_at": self.schedule_applied_at,
@@ -152,7 +188,8 @@ class MQTTService:
                     continue
                 st = self.get_state(did)
                 for key in ("online", "status", "modo", "estado", "cmd",
-                            "temperature", "temp_error", "setpoint", "vag", "pressure", "firmware_version", "last_update"):
+                            "temperature", "temp_error", "setpoint", "vag", "pressure", "firmware_version",
+                            "last_update", *EXTRA_FIELDS):
                     if key in doc and doc[key] is not None:
                         setattr(st, key, doc[key])
         if self.simulation:
@@ -478,13 +515,23 @@ class MQTTService:
                 st.vag = float(payload)
             except ValueError:
                 pass
-        elif var in ("ESTADO/SET", "ESTADO", "COND", "COND/SET"):
-            # ESTADO/COND: true=NORMAL (programação), false=FORÇADO
-            st.estado = payload.lower() == "true" or payload == "1"
+        elif var in ("ESTADO/SET", "COND/SET"):
+            # Solicitado pelo supervisório (true=AUTOMÁTICO, false=FORÇADO)
+            st.estado_solicitado = _bool(payload)
+            st.estado_solicitado_at = now_iso()
+            st.sync_effective()
+        elif var in ("ESTADO", "COND"):
+            st.estado_real = _bool(payload)
             st.online = True
-        elif var in ("CMD/SET", "CMD", "COMANDO", "COMANDO/SET"):
-            st.cmd = payload.lower() == "true" or payload == "1"
+            st.sync_effective()
+        elif var in ("CMD/SET", "COMANDO/SET"):
+            st.cmd_solicitado = _bool(payload)
+            st.cmd_solicitado_at = now_iso()
+            st.sync_effective()
+        elif var in ("CMD", "COMANDO"):
+            st.cmd_real = _bool(payload)
             st.online = True
+            st.sync_effective()
         elif var in ("SETPOINT/SET", "SETPOINT"):
             try:
                 v = float(payload)
@@ -493,16 +540,33 @@ class MQTTService:
                     st.online = True
             except ValueError:
                 pass
-        elif var in ("PRESSAO/SET", "PRESSAO", "PRESSURE", "PRESSURE/SET"):
+        elif var in ("PRESSAO/SET", "PRESSURE/SET", "PRESSAO", "PRESSURE"):
             try:
                 v = float(payload)
                 if 0.0 <= v <= 100.0:
-                    st.pressure = v
-                    st.online = True
+                    if var.endswith("/SET"):
+                        st.pressure = v
+                    else:
+                        st.pressure_real = v
+                        st.online = True
             except ValueError:
                 pass
         elif var == "VERSAO":
             st.firmware_version = payload.strip() or None
+            st.online = True
+        elif var == "RESET":
+            st.reset_reason = payload.strip() or None
+            st.reset_at = now_iso()
+            st.online = True
+        elif var == "RSSI":
+            st.rssi = _int(payload)
+            st.online = True
+        elif var == "UPTIME":
+            st.uptime_min = _int(payload)
+            st.online = True
+        elif var == "OTA/STATE":
+            st.ota_state = payload.strip() or None
+            st.ota_state_at = now_iso()
             st.online = True
         elif var in ("SCHEDULE/STATE", "SCHEDULE"):
             # Confirmação de agenda aplicada pela controladora
@@ -521,9 +585,16 @@ class MQTTService:
                 upsert=True,
             )
 
-        # Resolve pending commands by matching var/value
-        pk = f"{device_id}:{var}"
-        if pk in self.pending_cmds:
+        # Resolve pending commands. Firmware v1.4+: confirmação vem do tópico real
+        # (CMD/ESTADO/PRESSAO); o eco do próprio /SET só confirma em firmware antigo.
+        real_of = {"CMD/SET": st.cmd_real, "ESTADO/SET": st.estado_real, "PRESSAO/SET": st.pressure_real}
+        if var in ("CMD", "ESTADO", "PRESSAO"):
+            pk = f"{device_id}:{var}/SET"
+        elif real_of.get(var) is not None:
+            pk = None
+        else:
+            pk = f"{device_id}:{var}"
+        if pk and pk in self.pending_cmds:
             pending = self.pending_cmds.pop(pk)
             await db.command_log.update_one(
                 {"_id": pending["log_id"]},

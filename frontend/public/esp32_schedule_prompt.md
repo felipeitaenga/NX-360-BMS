@@ -1,103 +1,101 @@
-# Prompt para ajustar o firmware do ESP32 (NX-360 BMS — Programação Horária v2 "estado esperado")
+# Prompt para o firmware do ESP32 (NX-360 BMS — protocolo v1.4.x)
 
-Preciso que você ajuste meu firmware ESP32 (controlador de fancoil) para que ele receba,
-armazene e execute a programação horária enviada pelo supervisório **NX-360 BMS** via MQTT.
+Preciso que você ajuste meu firmware ESP32 (controlador de fancoil) para o protocolo MQTT do
+supervisório **NX-360 BMS** descrito abaixo. Mantenha o restante do firmware funcional.
 
-> ATENÇÃO — MUDANÇA DE LÓGICA EM RELAÇÃO À VERSÃO ANTERIOR:
-> - Um `CMD` agendado **NÃO deve mais forçar `ESTADO=false`**. A programação só atua em modo AUTOMÁTICO.
-> - A programação deixa de ser apenas "gatilho no minuto exato" e passa a ser **estado esperado**:
->   em AUTOMÁTICO o firmware calcula continuamente se o fancoil deveria estar LIGADO ou DESLIGADO.
+## 1. Regra geral: COMANDO × ESTADO REAL
 
-## Protocolo MQTT (inalterado)
+- Tópicos terminados em **`/SET`** são **escritos SOMENTE pelo supervisório** (comando/solicitação).
+  A controladora **assina** esses tópicos e **NUNCA publica / ecoa** em `/SET`.
+- A controladora publica o **estado real** (o que ela realmente aplicou) em tópicos **sem `/SET`**,
+  sempre com **retain = true**, logo após cada mudança e no boot/reconexão.
 
-**Tópico (RECEIVE, assinatura obrigatória):**
+Prefixo: `TJS/{DEVICE_ID}/...` (ex.: `TJS/3054/CMD`). Payloads em texto puro (não JSON).
 
-```
-TJS/{DEVICE_ID}/SCHEDULE/SET            (QoS 1, retained = true)
-```
+### Assinados pela controladora (escritos pelo supervisório)
 
-`{DEVICE_ID}` é o ID atual do fancoil (ex.: `CE94`, `A100`, `2CB0`).
+| Tópico | Payload | Observação |
+|---|---|---|
+| `CMD/SET` | `true` / `false` | Ligar/desligar — só tem efeito em FORÇADO |
+| `ESTADO/SET` | `true` / `false` | `true` = AUTOMÁTICO, `false` = FORÇADO |
+| `SETPOINT/SET` | número 10..35 (0.5) | °C |
+| `PRESSAO/SET` | número 0..100 | % aplicado na AO2 |
+| `SCHEDULE/SET` | lista de agendamentos (retido) | ver seção 3 |
+| `OTA/SET` | `VERSAO;URL;MD5` (**NÃO retido**) | ver seção 4 |
 
-**Payload:** texto puro (NÃO é JSON). Uma linha por agendamento, separadas por `\n`.
-Payload vazio (`""`) = apagar TODOS os agendamentos.
+### Publicados pela controladora (retain = true)
 
-Formato de cada linha (6 campos separados por `;`):
+| Tópico | Payload | Quando |
+|---|---|---|
+| `CMD` | `true` / `false` | estado REAL do relé, a cada mudança |
+| `ESTADO` | `true` / `false` | modo REAL (`true` = AUTOMÁTICO), a cada mudança |
+| `PRESSAO` | número 0..100 | % realmente aplicado na AO2 |
+| `ONLINE`, `STATUS`, `MODO`, `TEMPERATURA`, `VAG` | (inalterados) | como hoje |
+| `VERSAO` | ex.: `1.4.0` | no boot / ao conectar |
+| `RESET` | motivo do último reinício, ex.: `SW / MQTT_SEM_CONEXAO`, `BROWNOUT / BOOTLOOP 3 / RELE_BLOQUEADO` | no boot |
+| `RSSI` | dBm (inteiro, ex.: `-63`) | a cada 60 s |
+| `UPTIME` | minutos desde o boot (inteiro) | a cada 60 s |
+| `OTA/STATE` | `baixando 1.4.1` / `ok 1.4.1 reiniciando` / `erro: ...` / `ignorado: ...` / `rollback` | durante o OTA |
+| `SCHEDULE/STATE` | (opcional) payload de agenda aplicado | após aplicar SCHEDULE/SET |
+
+O supervisório gera alarme crítico se `RESET` contiver `BOOTLOOP` ou `RELE_BLOQUEADO`, e alarme
+de aviso se `RSSI` ficar abaixo de -80 dBm por mais de 30 min.
+
+## 2. Modos (ESTADO)
+
+- **FORÇADO (`ESTADO=false`)**: obedece SOMENTE ao `CMD/SET` manual. A programação de `CMD` é ignorada.
+  Permanece FORÇADO até receber `ESTADO/SET=true` (manual ou agendamento `ESTADO`).
+- **AUTOMÁTICO (`ESTADO=true`)**: segue a programação horária de `CMD` pelo conceito de **estado esperado**.
+  `CMD/SET` recebido em AUTOMÁTICO é ignorado (log de aviso).
+- Um `CMD` agendado **NUNCA** muda o modo para FORÇADO.
+- Após qualquer mudança de modo ou relé, publicar `ESTADO` e `CMD` reais (retidos).
+
+## 3. Programação horária — `TJS/{DEVICE_ID}/SCHEDULE/SET` (QoS 1, retido)
+
+Uma linha por agendamento, separadas por `\n`. Payload vazio = apagar todos.
 
 ```
 IDX;HH:MM;DIAS;ACAO;VALOR;EN
-```
-
-- **IDX**: índice do slot (0..9), apenas informativo.
-- **HH:MM**: hora local 24h (Brasília, UTC-3).
-- **DIAS**: `*` = todos os dias, ou lista `0=Dom,1=Seg,…,6=Sáb` separada por vírgula (ex.: `1,2,3,4,5`).
-- **ACAO**: `ESTADO` | `CMD` | `SETPOINT`
-  - `ESTADO` → modo (`true` = AUTOMÁTICO, `false` = FORÇADO).
-  - `CMD` → ventilador (`true` = LIGAR, `false` = DESLIGAR).
-  - `SETPOINT` → °C, faixa 10..35, resolução 0.5.
-- **VALOR**: `true`/`false` para ESTADO/CMD; número para SETPOINT.
-- **EN**: `1` ativo, `0` desativado (ignorar `0`).
-
-Exemplo:
-
-```
 0;07:00;1,2,3,4,5;CMD;true;1
 1;18:00;1,2,3,4,5;CMD;false;1
 2;22:00;*;SETPOINT;24;1
 ```
 
-## Regras de modo (IMPORTANTE)
+- HH:MM local (UTC-3). DIAS: `*` ou `0=Dom..6=Sáb`. ACAO: `ESTADO` | `CMD` | `SETPOINT`. EN `0` = ignorar.
+- Ao receber: parse robusto, **substituir** a lista, salvar em NVS e, se em AUTOMÁTICO, reavaliar na hora.
 
-- **ESTADO = false (FORÇADO / manual)**: o fancoil obedece SOMENTE ao `CMD/SET` manual vindo do supervisório.
-  A programação de `CMD` é **ignorada** enquanto estiver em FORÇADO.
-  O FORÇADO **permanece indefinidamente** até alguém mudar para AUTOMÁTICO (manualmente ou por um agendamento `ESTADO=true`).
-- **ESTADO = true (AUTOMÁTICO)**: o fancoil segue a programação horária de `CMD` pelo conceito de **estado esperado**.
+### `calcExpectedCmd()` (estado esperado em AUTOMÁTICO)
+1. Considerar só linhas ativas `ACAO=CMD` cujo DIAS inclui hoje e `HH:MM <= agora`.
+2. Estado esperado = VALOR da linha de **maior HH:MM**.
+3. Sem nenhum gatilho de CMD hoje até agora (ou sem linhas CMD) → **DESLIGADO**. Não herdar do dia anterior.
 
-## Cálculo do "estado esperado" de CMD (função `calcExpectedCmd()`)
+### Loop (a cada 1 s, via `millis()`, só com NTP sincronizado)
+- Em AUTOMÁTICO: se `calcExpectedCmd()` ≠ relé atual → aplicar e publicar `CMD` real (retido).
+  Cobre gatilhos, reboot, retorno de energia e virada do dia.
+- Agendamentos `ESTADO` (no minuto exato, 1×/min): aplicar o modo e publicar `ESTADO` real;
+  se virou AUTOMÁTICO, reavaliar o CMD imediatamente.
+- Agendamentos `SETPOINT` (no minuto exato, qualquer modo): clamp 10..35 e aplicar.
+- Ao receber `ESTADO/SET=true`: entrar em AUTOMÁTICO e aplicar `calcExpectedCmd()` **na hora**.
+- Sem NTP: não alterar CMD pela programação (log a cada 60 s).
+- Boot: restaurar lista e modo da NVS; após NTP, reavaliar.
 
-1. Considere apenas as linhas ativas com `ACAO = CMD`.
-2. Para o **dia atual**, pegue as linhas cujo DIAS inclui hoje e cujo `HH:MM <= hora atual`.
-3. Se houver alguma, o estado esperado = VALOR da linha com o **maior HH:MM** (o último gatilho já ocorrido hoje).
-4. Se **não houver** nenhum gatilho de CMD até agora no dia atual (inclusive se não houver nenhum agendamento para hoje),
-   o estado esperado é **DESLIGADO (false)**.
-   (Não herdar do dia anterior — antes do primeiro horário do dia, o equipamento fica desligado.)
-5. Se não existir NENHUMA linha CMD na lista inteira → estado esperado = **DESLIGADO (false)**.
+## 4. OTA remoto — `TJS/{DEVICE_ID}/OTA/SET` (NÃO retido)
 
-## O que o firmware deve fazer
+Payload: `VERSAO;URL;MD5` — ex.: `1.4.1;https://.../api/firmware/files/<token>/fw.bin;9e107d9d372bb6826bd81d3542a419d6`
 
-1. **Assinar** `TJS/{DEVICE_ID}/SCHEDULE/SET` com QoS 1 (retained — o broker reenvia ao reconectar).
-2. **Ao receber o payload**: parse robusto (ignorar linhas malformadas com warning), **substituir completamente**
-   a lista interna (sem merge), persistir em NVS/Preferences. Depois, se estiver em AUTOMÁTICO, **reavaliar imediatamente** (passo 4).
-3. **Ao receber `ESTADO/SET`**:
-   - `false` → entrar em FORÇADO, manter o CMD atual, passar a obedecer apenas CMD manual.
-   - `true` → entrar em AUTOMÁTICO e **imediatamente** executar `calcExpectedCmd()` e aplicar o resultado
-     (ex.: estava desligado em FORÇADO, horário atual está dentro de um período LIGADO → liga na hora).
-4. **Loop a cada 1s** (via `millis()`), apenas se NTP sincronizado:
-   - Se em AUTOMÁTICO: calcular `calcExpectedCmd()`; se diferente do estado atual do ventilador,
-     aplicar e publicar `TJS/{DEVICE_ID}/CMD/SET = true|false` (retained) para o supervisório refletir.
-     (Isso cobre gatilhos no minuto exato, retorno de energia, reboot e virada de dia.)
-   - Agendamentos `ESTADO` (no minuto exato, uma vez por minuto): publicar `TJS/{DEVICE_ID}/ESTADO/SET` (retained)
-     e aplicar a regra do passo 3 (se for `true`, reavaliar o CMD imediatamente).
-   - Agendamentos `SETPOINT` (no minuto exato, uma vez por minuto, em qualquer modo): clamp 10..35,
-     publicar `TJS/{DEVICE_ID}/SETPOINT/SET` (retained).
-   - Marcar "executado neste minuto" para ESTADO/SETPOINT para evitar re-trigger.
-5. **Boot / reconexão**: restaurar lista e modo (ESTADO) da NVS; ao obter NTP, se em AUTOMÁTICO, reavaliar imediatamente.
-   Re-assinar `SCHEDULE/SET` ao reconectar.
-6. Sem NTP sincronizado: **não** alterar CMD pela programação; logar warning a cada 60s.
-7. **CMD/SET manual recebido enquanto em AUTOMÁTICO**: ignorar (logar warning) — o supervisório só permite
-   comando manual em FORÇADO. Exceção: mensagens CMD/SET que o próprio firmware publicou (eco) devem ser ignoradas sem warning.
-8. (Opcional) Publicar em `TJS/{DEVICE_ID}/SCHEDULE/STATE` (retained) o payload aplicado — confirmação para o supervisório.
+1. Se `VERSAO` == versão atual → publicar `OTA/STATE = ignorado: mesma versão` e não fazer nada.
+2. Publicar `OTA/STATE = baixando <versao>`; baixar via HTTPS (Update.h/HTTPUpdate), conferindo o MD5.
+3. O fancoil **continua operando** durante o download.
+4. Sucesso → `OTA/STATE = ok <versao> reiniciando` e reiniciar. No boot publicar `VERSAO` nova e `RESET`.
+5. Falha → `OTA/STATE = erro: <motivo>` (MD5, HTTP, espaço…) e continuar na versão atual.
+6. Se a nova versão não validar (ex.: não conectar ao MQTT em X min) → rollback para a partição anterior e
+   publicar `OTA/STATE = rollback` após reconectar.
 
-## Observações
+O supervisório envia o OTA para uma controladora por vez e só segue para a próxima quando recebe
+`VERSAO` igual à enviada (ou pausa ao receber `erro`/`rollback`, ou após 10 min sem resposta).
 
-- Tudo plain text — não JSON. Fuso UTC-3, sem horário de verão.
-- O supervisório é a fonte da verdade da lista de agendamentos (retained, sempre sobrescreve).
-- Os tópicos de leitura atuais (ONLINE, STATUS, MODO, TEMPERATURA, VAG) continuam iguais;
-  `MODO` deve refletir o ESTADO atual (`1` = AUTOMÁTICO, `0` = FORÇADO) logo após cada mudança.
+## Entrega
 
-Me devolva o código Arduino/ESP-IDF completo com:
-- Parser do payload + persistência em NVS (lista e modo)
-- Função `calcExpectedCmd()` conforme as regras acima
-- Handler de `ESTADO/SET` com reavaliação imediata ao voltar para AUTOMÁTICO
-- Loop via `millis()`, sync NTP UTC-3, logs via Serial
-
-Mantenha o restante do firmware funcional (TEMPERATURA, CMD, ESTADO, SETPOINT, VAG…) — este é um ajuste no ADD-ON de programação existente.
+Devolva o código Arduino/ESP-IDF completo com: parser de agenda + NVS, `calcExpectedCmd()`, handlers
+de `ESTADO/SET`, `CMD/SET`, `SETPOINT/SET`, `PRESSAO/SET`, `OTA/SET`, publicação dos estados reais
+(retidos) e de `VERSAO`/`RESET`/`RSSI`/`UPTIME`/`OTA/STATE`, loop via `millis()`, NTP UTC-3 e logs via Serial.

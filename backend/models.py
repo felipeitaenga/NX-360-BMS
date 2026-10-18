@@ -156,6 +156,7 @@ class BrokerConfig(BaseModel):
     tls: bool = False
     client_id: str = "pilares-backend"
     topic_prefix: str = "TJS"
+    clear_password: bool = False
 
 
 class SettingsUpdate(BaseModel):

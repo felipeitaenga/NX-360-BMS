@@ -17,6 +17,7 @@ from lighting_service import lighting_svc
 from routes import router
 from lighting_routes import router as lighting_router
 from password_reset import router as pwd_router
+from firmware_routes import router as firmware_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("app")
@@ -39,6 +40,7 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(lighting_router)
 app.include_router(pwd_router)
+app.include_router(firmware_router)
 
 
 @app.get("/api/health")

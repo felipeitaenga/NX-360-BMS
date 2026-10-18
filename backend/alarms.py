@@ -16,7 +16,13 @@ ALARM_TYPES = {
     "TEMP_OUT_OF_RANGE": {"priority": "media", "label": "Temperatura fora da faixa"},
     "FORCED_TOO_LONG": {"priority": "baixa", "label": "Em modo forçado por tempo prolongado"},
     "BROKER_DOWN": {"priority": "alta", "label": "Backend sem conexão com broker MQTT"},
+    "RESET_CRITICO": {"priority": "alta", "label": "Controladora reiniciou por falha crítica (BOOTLOOP / RELÉ BLOQUEADO)"},
+    "WIFI_FRACO": {"priority": "media", "label": "Sinal Wi-Fi fraco (< -80 dBm por mais de 30 min)"},
+    "OTA_FALHA": {"priority": "media", "label": "Falha na atualização remota de firmware (OTA)"},
 }
+
+RSSI_WEAK_DBM = -80
+RSSI_WEAK_SECONDS = 30 * 60
 
 
 def now_iso() -> str:
@@ -95,6 +101,21 @@ async def run_alarm_engine(svc):
                 did = fc["device_id"]
                 st = svc.get_state(did)
                 tr = _track(did)
+                # Reset crítico (avaliado mesmo offline — o motivo fica retido)
+                reason = (st.reset_reason or "").upper()
+                if "BOOTLOOP" in reason or "RELE_BLOQUEADO" in reason:
+                    await raise_alarm(did, "RESET_CRITICO", {"reset": st.reset_reason})
+                else:
+                    await clear_alarm(did, "RESET_CRITICO")
+                # Wi-Fi fraco sustentado
+                if st.rssi is not None and st.rssi < RSSI_WEAK_DBM:
+                    tr.setdefault("rssi_weak_since", now)
+                    if now - tr["rssi_weak_since"] > RSSI_WEAK_SECONDS:
+                        await raise_alarm(did, "WIFI_FRACO", {"rssi": st.rssi})
+                else:
+                    tr.pop("rssi_weak_since", None)
+                    if st.rssi is not None:
+                        await clear_alarm(did, "WIFI_FRACO")
                 # Offline
                 last_update_ts = tr.get("last_update_ts")
                 if st.last_update:

@@ -1,6 +1,6 @@
 {
-  "version": "1.7.0",
-  "build_date": "2026-10-17",
-  "codename": "Firmware Version",
-  "notes": "Tópico VERSAO: versão do firmware de cada controladora no detalhe do fancoil, na lista de fancoils e no Diagnóstico MQTT (persistida em device_states)."
+  "version": "1.8.0",
+  "build_date": "2026-10-18",
+  "codename": "Firmware 1.4 + OTA",
+  "notes": "Suporte ao firmware v1.4.x: comando × estado real (CMD/ESTADO/PRESSAO), VERSAO/RESET/RSSI/UPTIME/OTA, alarmes de reset crítico e Wi-Fi fraco, upload de .bin e OTA escalonado, senha do broker protegida."
 }

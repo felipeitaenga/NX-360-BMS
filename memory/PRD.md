@@ -101,6 +101,14 @@ Firmware pronto (não mexer). Backend/UI alinhados ao protocolo:
 - `TJS/{ID}/VERSAO` (texto) → `FancoilState.firmware_version` (strip), marca online; incluído em `to_dict()`, persistido em `device_states` e restaurado no start.
 - UI: subtítulo do FancoilDetail "• Firmware vX" (ou "—"); badge `vX`/`fw —` em cada card da lista de fancoils + tooltip; coluna "Firmware" no Diagnóstico MQTT (Admin) e VERSAO nas opções de mapeamento.
 
+## Novidades (2026-10-18 — v1.8.0 Firmware v1.4.x + OTA)
+- mqtt_service: comando × estado real — `CMD`→cmd_real, `CMD/SET`→cmd_solicitado(+_at), `ESTADO`→estado_real, `ESTADO/SET`→estado_solicitado(+_at), `PRESSAO`→pressure_real, `PRESSAO/SET`→pressure. `sync_effective()`: cmd/estado = real se existir, senão solicitado (firmware antigo). Novos: reset_reason/reset_at, rssi, uptime_min, ota_state/ota_state_at (to_dict + device_states). Confirmação de comando pelo tópico real.
+- Alarmes: RESET_CRITICO (BOOTLOOP/RELE_BLOQUEADO, alta), WIFI_FRACO (RSSI < -80 por 30 min, media), OTA_FALHA (media).
+- Broker: senha nunca devolvida (`password_set`); em branco = mantém; opção "remover senha"; teste usa a salva.
+- `firmware_routes.py`: POST/GET/DELETE `/api/admin/firmware` (multipart .bin ≤4 MB, X.Y.Z, md5/sha256, token 32 hex, `backend/uploads/firmware/<token>/`), GET público `/api/firmware/files/{token}/{nome}`, GET `/api/admin/firmware/controladoras`, POST `/api/admin/firmware/{id}/enviar` (lote escalonado, 1 por vez, sucesso=VERSAO igual, falha=OTA/STATE erro/rollback/ignorado ou 10 min → pausa + alarme), GET `/api/admin/firmware/lote`, POST `/api/admin/firmware/lote/cancelar`. Lote em memória (perde-se ao reiniciar backend).
+- UI: aba Admin "Firmware das controladoras" (`components/FirmwareTab.jsx`); FancoilDetail "(solicitado: X)" âmbar após 30 s; Diagnóstico MQTT com Firmware/RSSI/Uptime/RESET e tópicos reais.
+- Prompt firmware reescrito (protocolo v1.4.x completo).
+
 ## Backlog
 - P1: Mapear MODO/STATUS fora do prefixo também (atualmente CJ031 só tem TEMPERATURA e VAG mapeados — faltam outros tópicos se o firmware publicar)
 - P1: dashboards por sistema (HVAC/ilum/hidráulica) e indicadores agregados por andar

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, formatApiError } from "../lib/api";
@@ -12,13 +12,31 @@ import { ArrowLeft, Minus, Plus, Power, Hand, Wifi, WifiOff } from "lucide-react
 import FancoilSchematicSVG from "../components/FancoilSchematicSVG";
 import { HistoryCharts } from "../components/HistoryCharts";
 
-function IndicatorRow({ label, value, color, testid }) {
+function IndicatorRow({ label, value, color, testid, pending }) {
   return (
     <div className="flex items-center justify-between gap-3 py-2 border-b border-border/60 last:border-0">
       <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className={`font-mono font-bold text-sm ${color || "text-foreground"}`} data-testid={testid}>{value}</div>
+      <div className="flex items-baseline gap-2">
+        {pending && <span className="text-[11px] font-mono text-amber-400" data-testid={`${testid}-solicitado`}>(solicitado: {pending})</span>}
+        <div className={`font-mono font-bold text-sm ${color || "text-foreground"}`} data-testid={testid}>{value}</div>
+      </div>
     </div>
   );
+}
+
+// Solicitado ≠ real por mais de 30 s → rótulo do solicitado
+function pendingLabel(real, req, reqAt, now, labels) {
+  if (real == null || req == null || real === req || !reqAt) return null;
+  return now - new Date(reqAt).getTime() > 30000 ? labels[String(req)] : null;
+}
+
+function useNow(ms) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(t);
+  }, [ms]);
+  return now;
 }
 
 export default function FancoilDetail() {
@@ -61,6 +79,10 @@ export default function FancoilDetail() {
   const pressure = pressureBuffer != null ? pressureBuffer : serverPressure;
 
   const canCommand = user && user.role !== "viewer";
+  const now = useNow(5000);
+  const fcs = { ...(fancoil || {}), ...st };
+  const estadoPend = pendingLabel(fcs.estado_real, fcs.estado_solicitado, fcs.estado_solicitado_at, now, { true: "NORMAL", false: "FORÇADO" });
+  const cmdPend = pendingLabel(fcs.cmd_real, fcs.cmd_solicitado, fcs.cmd_solicitado_at, now, { true: "LIGAR", false: "DESLIGAR" });
 
   const sendCommand = async (kind, value) => {
     try {
@@ -128,8 +150,9 @@ export default function FancoilDetail() {
               value={estado === true ? "NORMAL" : estado === false ? "FORÇADO" : "--"}
               color={estado === true ? "text-emerald-400" : estado === false ? "text-amber-400" : "text-muted-foreground"}
               testid="indicator-condicao"
+              pending={estadoPend}
             />
-            <IndicatorRow label="Comando" value={cmd === true ? "LIGAR" : cmd === false ? "DESLIGAR" : "--"} color={cmd === true ? "text-emerald-400" : "text-red-400"} testid="indicator-comando" />
+            <IndicatorRow label="Comando" value={cmd === true ? "LIGAR" : cmd === false ? "DESLIGAR" : "--"} color={cmd === true ? "text-emerald-400" : "text-red-400"} testid="indicator-comando" pending={cmdPend} />
             <IndicatorRow label="Quadro" value={modo === true ? "AUTOMÁTICO" : modo === false ? "MANUAL" : "--"} color={modo === false ? "text-amber-400" : "text-emerald-400"} testid="indicator-quadro" />
             <IndicatorRow label="Status" value={status === true ? "LIGADO" : status === false ? "DESLIGADO" : "--"} color={status === true ? "text-emerald-400" : "text-red-400"} testid="indicator-status" />
             <IndicatorRow label="Temperatura" value={tempError ? "ERRO" : temperature != null ? `${temperature.toFixed(1)} °C` : "--"} color={tempError ? "text-red-400" : "text-sky-400"} testid="indicator-temperatura" />

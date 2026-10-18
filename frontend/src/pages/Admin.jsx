@@ -12,6 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Checkbox } from "../components/ui/checkbox";
 import { toast } from "sonner";
 import { UserPlus, Trash2, KeyRound, Upload, RefreshCw, Settings as SettingsIcon, Pencil, Radio, Activity, Link2, ArrowDownToLine, Plus, Download, Database, AlertTriangle } from "lucide-react";
+import { FirmwareTab, rssiColor, fmtUptime } from "../components/FirmwareTab";
+import { useTelemetry } from "../context/TelemetryContext";
 
 const MODULES = [
   { id: "home", label: "Início" },
@@ -521,7 +523,18 @@ function SettingsTab() {
           </div>
           <div><Label>Client ID</Label><Input value={form.broker.client_id || ""} onChange={(e) => updBroker("client_id", e.target.value)} data-testid="broker-client-id" /></div>
           <div><Label>Usuário</Label><Input value={form.broker.username || ""} onChange={(e) => updBroker("username", e.target.value)} data-testid="broker-username" /></div>
-          <div><Label>Senha</Label><Input type="password" value={form.broker.password || ""} onChange={(e) => updBroker("password", e.target.value)} data-testid="broker-password" /></div>
+          <div>
+            <Label>Senha</Label>
+            <Input type="password" value={form.broker.password || ""} onChange={(e) => updBroker("password", e.target.value)} placeholder={s.broker.password_set ? "•••••• (definida — deixe em branco para manter)" : "não definida"} data-testid="broker-password" autoComplete="new-password" />
+            <div className="text-[10px] font-mono mt-1 flex items-center gap-2" data-testid="broker-password-status">
+              {s.broker.password_set ? <span className="text-emerald-400">● senha definida</span> : <span className="text-muted-foreground">● sem senha</span>}
+              {s.broker.password_set && (
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input type="checkbox" checked={!!form.broker.clear_password} onChange={(e) => updBroker("clear_password", e.target.checked)} data-testid="broker-clear-password" /> remover senha
+                </label>
+              )}
+            </div>
+          </div>
           <div><Label>Prefixo tópicos</Label><Input value={form.broker.topic_prefix || ""} onChange={(e) => updBroker("topic_prefix", e.target.value)} data-testid="broker-prefix" /></div>
           <label className="flex items-center gap-2 mt-2 col-span-full">
             <Switch
@@ -588,12 +601,14 @@ export default function Admin() {
           <TabsTrigger value="fancoils" data-testid="admin-tab-fancoils">Fancoils</TabsTrigger>
           <TabsTrigger value="settings" data-testid="admin-tab-settings">Broker e Parâmetros</TabsTrigger>
           <TabsTrigger value="diag" data-testid="admin-tab-diag">Diagnóstico MQTT</TabsTrigger>
+          <TabsTrigger value="firmware" data-testid="admin-tab-firmware">Firmware das controladoras</TabsTrigger>
           <TabsTrigger value="backup" data-testid="admin-tab-backup">Backup</TabsTrigger>
         </TabsList>
         <TabsContent value="users"><UsersTab /></TabsContent>
         <TabsContent value="fancoils"><FancoilsTab /></TabsContent>
         <TabsContent value="settings"><SettingsTab /></TabsContent>
         <TabsContent value="diag"><MqttDiagTab /></TabsContent>
+        <TabsContent value="firmware"><FirmwareTab /></TabsContent>
         <TabsContent value="backup"><BackupTab /></TabsContent>
       </Tabs>
     </div>
@@ -738,8 +753,9 @@ function MqttDiagTab() {
     queryFn: async () => (await api.get("/fancoils")).data,
   });
   const devices = summary?.devices || [];
-  const EXPECTED = ["STATUS", "MODO", "TEMPERATURA", "VAG", "CMD/SET", "ESTADO/SET", "SETPOINT/SET", "PRESSAO/SET"];
-  const VAR_OPTIONS = ["ONLINE", "STATUS", "MODO", "TEMPERATURA", "VAG", "VERSAO", "ESTADO/SET", "CMD/SET", "SETPOINT/SET", "PRESSAO/SET"];
+  const { states: liveStates } = useTelemetry();
+  const EXPECTED = ["STATUS", "MODO", "TEMPERATURA", "VAG", "CMD", "ESTADO", "PRESSAO", "CMD/SET", "ESTADO/SET", "SETPOINT/SET", "PRESSAO/SET"];
+  const VAR_OPTIONS = ["ONLINE", "STATUS", "MODO", "TEMPERATURA", "VAG", "CMD", "ESTADO", "PRESSAO", "VERSAO", "RESET", "RSSI", "UPTIME", "OTA/STATE", "ESTADO/SET", "CMD/SET", "SETPOINT/SET", "PRESSAO/SET"];
 
   const addMapping = async () => {
     try {
@@ -809,6 +825,9 @@ function MqttDiagTab() {
               <tr>
                 <th className="p-2">device_id</th>
                 <th className="p-2">Firmware</th>
+                <th className="p-2">RSSI</th>
+                <th className="p-2">Uptime</th>
+                <th className="p-2">Último RESET</th>
                 {EXPECTED.map((v) => <th key={v} className="p-2 font-mono">{v}</th>)}
                 <th className="p-2">Última msg</th>
                 <th className="p-2">#</th>
@@ -818,16 +837,21 @@ function MqttDiagTab() {
             <tbody>
               {devices.map((d) => {
                 const varMap = Object.fromEntries((d.vars || []).map((v) => [v.var, v]));
+                const ls = liveStates[d.device_id] || {};
+                const fwv = ls.firmware_version || (varMap.VERSAO && String(varMap.VERSAO.last_payload).trim());
                 return (
                   <tr key={d.device_id} className="border-t border-border/60 hover:bg-accent/5" data-testid={`diag-row-${d.device_id}`}>
                     <td className="p-2 font-mono font-bold">{d.device_id}</td>
                     <td className="p-2 font-mono" data-testid={`diag-fw-${d.device_id}`}>
-                      {varMap.VERSAO ? (
-                        <span className="text-sky-400">v{String(varMap.VERSAO.last_payload).trim()}</span>
+                      {fwv ? (
+                        <span className="text-sky-400">v{fwv}</span>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
                     </td>
+                    <td className={`p-2 font-mono ${rssiColor(ls.rssi)}`} data-testid={`diag-rssi-${d.device_id}`}>{ls.rssi != null ? `${ls.rssi} dBm` : "—"}</td>
+                    <td className="p-2 font-mono" data-testid={`diag-uptime-${d.device_id}`}>{fmtUptime(ls.uptime_min)}</td>
+                    <td className="p-2 font-mono max-w-[180px] truncate" title={ls.reset_reason || ""} data-testid={`diag-reset-${d.device_id}`}>{ls.reset_reason || "—"}</td>
                     {EXPECTED.map((v) => (
                       <td key={v} className="p-2">
                         {varMap[v] ? (
@@ -852,7 +876,7 @@ function MqttDiagTab() {
                 );
               })}
               {devices.length === 0 && (
-                <tr><td colSpan={EXPECTED.length + 5} className="p-6 text-center text-muted-foreground">Nenhum tópico recebido ainda. Aguarde ~5s...</td></tr>
+                <tr><td colSpan={EXPECTED.length + 8} className="p-6 text-center text-muted-foreground">Nenhum tópico recebido ainda. Aguarde ~5s...</td></tr>
               )}
             </tbody>
           </table>
