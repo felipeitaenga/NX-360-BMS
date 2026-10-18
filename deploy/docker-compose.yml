@@ -40,6 +40,7 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@pilares.com.br}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@123}
       FRONTEND_URL: ${REACT_APP_BACKEND_URL}
+      FIRMWARE_PUBLIC_BASE: ${FIRMWARE_PUBLIC_BASE:-}
     volumes:
       - nx360_uploads:/app/uploads
     networks: [nx360]
