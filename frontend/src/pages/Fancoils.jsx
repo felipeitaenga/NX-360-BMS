@@ -22,7 +22,7 @@ function statusColor(st, fc) {
 }
 
 function Dot({ kind, hasAlarm }) {
-  const base = "inline-block w-3 h-3 rounded-full";
+  const base = "inline-block w-3 h-3 rounded-full shrink-0";
   if (hasAlarm) return <span className={`${base} bg-red-500 pulse-red`} />;
   if (kind === "on") return <span className={`${base} bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]`} />;
   if (kind === "off") return <span className={`${base} bg-slate-500`} />;
@@ -74,19 +74,19 @@ function FancoilItem({ fc, state, hasAlarm, side }) {
   const content = (
     <div
       data-testid={`fancoil-card-${fc.name.toLowerCase()}`}
-      className={`flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-2 rounded-md border border-border bg-card hover:bg-accent/10 transition-all ${
+      className={`flex items-center gap-1.5 sm:gap-3 px-2 sm:px-3 py-2 rounded-md border border-border bg-card hover:bg-accent/10 transition-all ${
         !authorized ? "opacity-40 pointer-events-none" : ""
       } ${side === 2 ? "flex-row-reverse text-right" : ""}`}
     >
-      <Wind className={`w-5 h-5 shrink-0 ${online ? "text-sky-400" : "text-slate-600"}`} strokeWidth={1.75} />
-      <div className={`flex-1 min-w-0 truncate text-sm flex flex-col sm:block ${side === 2 ? "items-end" : ""}`} data-testid={`fancoil-temp-${fc.name.toLowerCase()}`}>
+      <Wind className={`hidden sm:block w-5 h-5 shrink-0 ${online ? "text-sky-400" : "text-slate-600"}`} strokeWidth={1.75} />
+      <div className={`flex-1 min-w-0 overflow-hidden sm:truncate whitespace-nowrap text-sm flex flex-col sm:block ${side === 2 ? "items-end" : ""}`} data-testid={`fancoil-temp-${fc.name.toLowerCase()}`}>
         {side !== 2 && <span className="font-display font-bold text-base text-foreground">{fc.name} </span>}
         {side !== 2 && <span className="text-muted-foreground hidden sm:inline">- </span>}
         <span className="text-muted-foreground hidden sm:inline">Temp: </span>
         {state.temp_error ? (
-          <span className="font-mono font-bold text-base text-red-500"><span className="sm:hidden">ERRO</span><span className="hidden sm:inline">SENSOR ERRO</span></span>
+          <span className="font-mono font-bold text-[15px] sm:text-base text-red-500"><span className="sm:hidden">ERRO</span><span className="hidden sm:inline">SENSOR ERRO</span></span>
         ) : (
-          <span className="font-mono font-bold text-base text-orange-400">{fmtC(state.temperature, 1)}</span>
+          <span className="font-mono font-bold text-[15px] sm:text-base text-orange-400">{fmtC(state.temperature, 1)}</span>
         )}
         <span className="hidden sm:inline">
           <span className="text-muted-foreground"> Setpoint: </span>
@@ -100,8 +100,8 @@ function FancoilItem({ fc, state, hasAlarm, side }) {
           PID: {pidLabel((state.pid_config ?? fc.pid_config).perfil)}
         </span>
       )}
-      {forced && <Hand className="w-4 h-4 text-amber-400" strokeWidth={2} />}
-      {!online && <WifiOff className="w-4 h-4 text-slate-500" />}
+      {forced && <Hand className="w-4 h-4 shrink-0 text-amber-400" strokeWidth={2} />}
+      {!online && <WifiOff className="w-4 h-4 shrink-0 text-slate-500" />}
       <Dot kind={kind} hasAlarm={hasAlarm} />
     </div>
   );
