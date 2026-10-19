@@ -61,7 +61,7 @@ class TestPidValidation:
         assert r.status_code == 400
         assert "kp" in r.json().get("detail", "")
 
-    @pytest.mark.parametrize("field,val", [("ti", 30), ("taxa", 25), ("zm", 1.5), ("zm", 0.05)])
+    @pytest.mark.parametrize("field,val", [("ti", 20), ("taxa", 60), ("zm", 1.5), ("zm", 0.05)])
     def test_other_out_of_range(self, admin, field, val):
         body = {"perfil": "PERSONALIZADO", "kp": 40, "ti": 300, "taxa": 10, "zm": 0.2, field: val}
         r = admin.post(f"{BASE_URL}/api/devices/{FID}/pid", json=body)

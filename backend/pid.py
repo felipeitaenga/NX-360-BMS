@@ -15,14 +15,15 @@ from db import db
 logger = logging.getLogger("pid")
 router = APIRouter(prefix="/api")
 
+# Escala v1.4.6 do firmware (NORMAL = antigo MUITO_RAPIDO; demais proporcionais)
 PROFILES = {
-    "MUITO_LENTO": {"kp": 30, "ti": 720, "taxa": 5, "zm": 0.20},
-    "LENTO": {"kp": 35, "ti": 480, "taxa": 7, "zm": 0.20},
-    "NORMAL": {"kp": 40, "ti": 300, "taxa": 10, "zm": 0.20},
-    "RAPIDO": {"kp": 50, "ti": 200, "taxa": 15, "zm": 0.15},
-    "MUITO_RAPIDO": {"kp": 60, "ti": 120, "taxa": 20, "zm": 0.15},
+    "MUITO_LENTO": {"kp": 45, "ti": 290, "taxa": 10, "zm": 0.20},
+    "LENTO": {"kp": 52, "ti": 190, "taxa": 14, "zm": 0.20},
+    "NORMAL": {"kp": 60, "ti": 120, "taxa": 20, "zm": 0.15},
+    "RAPIDO": {"kp": 75, "ti": 80, "taxa": 30, "zm": 0.15},
+    "MUITO_RAPIDO": {"kp": 90, "ti": 50, "taxa": 40, "zm": 0.10},
 }
-RANGES = {"kp": (5, 100), "ti": (60, 3600), "taxa": (1, 20), "zm": (0.10, 1.00)}
+RANGES = {"kp": (5, 150), "ti": (30, 3600), "taxa": (1, 50), "zm": (0.10, 1.00)}
 RESEND_INTERVAL_S = 300
 _last_sent: dict = {}
 

@@ -3,16 +3,16 @@ import { Label } from "./ui/label";
 import { Input } from "./ui/input";
 
 export const PID_PROFILES = {
-  MUITO_LENTO: { label: "Muito lento", kp: 30, ti: 720, taxa: 5, zm: 0.2, help: "Mais estável, resposta mínima (~2,5 %/min com 1 °C de erro)" },
-  LENTO: { label: "Lento", kp: 35, ti: 480, taxa: 7, zm: 0.2, help: "~4 %/min com 1 °C de erro" },
-  NORMAL: { label: "Normal", kp: 40, ti: 300, taxa: 10, zm: 0.2, help: "Recomendado, ~8 %/min com 1 °C de erro" },
-  RAPIDO: { label: "Rápido", kp: 50, ti: 200, taxa: 15, zm: 0.15, help: "~15 %/min com 1 °C de erro" },
-  MUITO_RAPIDO: { label: "Muito rápido", kp: 60, ti: 120, taxa: 20, zm: 0.15, help: "~30 %/min, pode oscilar" },
+  MUITO_LENTO: { label: "Muito lento", kp: 45, ti: 290, taxa: 10, zm: 0.2, help: "Mais estável (~9 %/min com 1 °C de erro; 0→100 % em ~5 min)" },
+  LENTO: { label: "Lento", kp: 52, ti: 190, taxa: 14, zm: 0.2, help: "~16 %/min com 1 °C de erro; 0→100 % em ~3,5 min" },
+  NORMAL: { label: "Normal", kp: 60, ti: 120, taxa: 20, zm: 0.15, help: "Padrão (~30 %/min com 1 °C de erro; 0→100 % em ~2,5 min)" },
+  RAPIDO: { label: "Rápido", kp: 75, ti: 80, taxa: 30, zm: 0.15, help: "~55 %/min com 1 °C de erro; pode oscilar" },
+  MUITO_RAPIDO: { label: "Muito rápido", kp: 90, ti: 50, taxa: 40, zm: 0.1, help: "~80 %/min; alto risco de oscilar — observe a VAG" },
 };
 const FIELDS = [
-  { k: "kp", label: "Kp (5–100)", min: 5, max: 100, step: 1 },
-  { k: "ti", label: "Ti em segundos (60–3600)", min: 60, max: 3600, step: 10 },
-  { k: "taxa", label: "Taxa %/ciclo (1–20)", min: 1, max: 20, step: 1 },
+  { k: "kp", label: "Kp (5–150)", min: 5, max: 150, step: 1 },
+  { k: "ti", label: "Ti em segundos (30–3600)", min: 30, max: 3600, step: 5 },
+  { k: "taxa", label: "Taxa %/ciclo (1–50)", min: 1, max: 50, step: 1 },
   { k: "zm", label: "Zona morta °C (0,1–1,0)", min: 0.1, max: 1, step: 0.05 },
 ];
 
