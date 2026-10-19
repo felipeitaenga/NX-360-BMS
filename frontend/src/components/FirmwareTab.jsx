@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "./ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { toast } from "sonner";
 import { Upload, Trash2, Cpu, AlertTriangle, Square, Copy, HelpCircle, PackageX, Plus, Search } from "lucide-react";
 import { rssiColor, fmtUptime, fmtDate, inspectFirmwareFile, otaLabel, otaStyle, CAT_LABEL } from "./firmware/fwUtils";
@@ -201,6 +202,44 @@ function VersionsTable({ modelo, fws, chosenId, setChosenId, batch }) {
 }
 
 // ---------- Controladoras ----------
+const fmtCurto = (s) => (s ? new Date(s).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : null);
+
+// Data/hora da última troca de versão + histórico (popover)
+function UpdatedCell({ c }) {
+  const [open, setOpen] = useState(false);
+  const { data: hist, isLoading } = useQuery({
+    queryKey: ["fw-updates", c.device_id], enabled: open,
+    queryFn: async () => (await api.get(`/admin/controllers/${encodeURIComponent(c.device_id)}/firmware-updates`)).data,
+  });
+  if (!c.fw_updated_at) return <span className="text-muted-foreground">—</span>;
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button type="button" className="text-left hover:underline" data-testid={`fw-updated-${c.device_id}`}>
+          <div>{fmtCurto(c.fw_updated_at)}</div>
+          {c.fw_prev_version && <div className="text-[10px] text-muted-foreground">{c.fw_prev_version} → {c.versao}</div>}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-3 text-xs">
+        <div className="font-bold mb-2">Histórico de firmware — {c.identificacao || c.device_id}</div>
+        {isLoading ? <div className="text-muted-foreground">Carregando…</div> : !hist?.length ? <div className="text-muted-foreground">Sem registros.</div> : (
+          <table className="w-full font-mono">
+            <tbody>
+              {hist.map((h, i) => (
+                <tr key={i} className="border-t border-border/50">
+                  <td className="py-1 pr-2">{fmtCurto(h.em)}</td>
+                  <td className="py-1 pr-2">{h.de} → {h.para}</td>
+                  <td className={`py-1 ${h.origem === "OTA" ? "text-sky-400" : "text-muted-foreground"}`}>{h.origem}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function ControllersTable({ ctrls, target, items, sel, setSel }) {
   const toggle = (id) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   return (
@@ -208,7 +247,7 @@ function ControllersTable({ ctrls, target, items, sel, setSel }) {
       <table className="w-full text-xs">
         <thead className="bg-muted/40 text-left"><tr>
           <th className="p-2"></th><th className="p-2">Identificação</th><th className="p-2">device_id</th><th className="p-2">Modelo</th><th className="p-2">Versão</th>
-          <th className="p-2">Conexão</th><th className="p-2">RSSI</th><th className="p-2">Uptime</th><th className="p-2">Último RESET</th><th className="p-2">OTA</th>
+          <th className="p-2">Conexão</th><th className="p-2">RSSI</th><th className="p-2">Atualizado em</th><th className="p-2">Último reinício</th><th className="p-2">OTA</th>
         </tr></thead>
         <tbody>
           {ctrls.map((c) => {
@@ -226,8 +265,11 @@ function ControllersTable({ ctrls, target, items, sel, setSel }) {
                 <td className={`p-2 font-mono ${vColor}`} data-testid={`fw-version-${c.device_id}`}>{c.versao ? `v${c.versao}` : "—"}</td>
                 <td className="p-2">{c.online ? <span className="text-emerald-400">online</span> : <span className="text-slate-500">offline</span>}</td>
                 <td className={`p-2 font-mono ${rssiColor(c.rssi)}`} data-testid={`fw-rssi-${c.device_id}`}>{c.rssi != null ? `${c.rssi} dBm` : "—"}</td>
-                <td className="p-2 font-mono">{fmtUptime(c.uptime_min)}</td>
-                <td className="p-2 font-mono max-w-[200px] truncate" title={c.reset_reason || ""}>{c.reset_reason || "—"}</td>
+                <td className="p-2 font-mono whitespace-nowrap"><UpdatedCell c={c} /></td>
+                <td className="p-2 font-mono max-w-[220px] truncate" data-testid={`fw-boot-${c.device_id}`}
+                  title={[c.uptime_min != null && `Ligada há ${fmtUptime(c.uptime_min)}`, c.reset_reason && `Motivo: ${c.reset_reason}`].filter(Boolean).join(" · ")}>
+                  {fmtCurto(c.last_boot_at) || "—"}{c.reset_reason && <span className="text-muted-foreground"> · {c.reset_reason}</span>}
+                </td>
                 <td className={`p-2 font-mono ${otaStyle[item?.status] || "text-muted-foreground"}`} data-testid={`fw-ota-${c.device_id}`}>
                   {otaLabel(item, c.ota_state)}
                   {/url n[aã]o permitida/i.test(`${c.ota_state || ""} ${item?.msg || ""}`) && (

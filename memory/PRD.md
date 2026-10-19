@@ -48,7 +48,7 @@ Aplicativo web em pt-BR para automação predial. Começou focado em HVAC (fanco
   - WS events novos: `lighting_telemetry`, `lighting_pending`, `lighting_pending_resolved`, `lighting_pending_timeout`.
 
 ## Credenciais
-Ver `/app/memory/test_credentials.md` (admin: felipejferreira@gmail.com / @Pilares1)
+Ver `/app/memory/test_credentials.md` (credenciais de teste via variáveis TEST_ADMIN_PASSWORD / TEST_OPERATOR_PASSWORD)
 
 ## Novidades (06/10/2026 — v3: contrato ESP32 oficial)
 Firmware pronto (não mexer). Backend/UI alinhados ao protocolo:

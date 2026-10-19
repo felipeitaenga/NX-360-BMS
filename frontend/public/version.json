@@ -1,6 +1,6 @@
 {
-  "version": "1.11.0",
+  "version": "1.11.1",
   "build_date": "2026-10-19",
-  "codename": "PID",
-  "notes": "Velocidade do controle (PID) no modal Editar fancoil com confirmação via PID/CONFIG, painel Controle em tempo real (PID/STATE), série Saída PID no histórico e selo de perfil na lista."
+  "codename": "FW-DATA",
+  "notes": "Página de firmware: coluna 'Atualizado em' (data/hora e versão anterior, com histórico) no lugar do uptime; 'Último reinício' com data/hora e motivo. Senhas removidas dos testes."
 }

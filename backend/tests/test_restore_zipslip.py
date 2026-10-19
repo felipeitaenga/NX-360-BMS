@@ -21,7 +21,7 @@ BASE_URL = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/")
 API = f"{BASE_URL}/api"
 
 ADMIN_EMAIL = "felipejferreira@gmail.com"
-ADMIN_PASS = "@Pilares1"
+ADMIN_PASS = os.environ.get("TEST_ADMIN_PASSWORD", "")
 
 UPLOADS_DIR = Path("/app/backend/uploads")
 PWNED_PATH = Path("/tmp/pwned_zipslip_test.txt")

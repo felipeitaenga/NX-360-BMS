@@ -10,7 +10,7 @@ MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.environ.get("DB_NAME", "pilares_hvac")
 
 ADMIN_EMAIL = "felipejferreira@gmail.com"
-ADMIN_PASSWORD = "@Pilares1"
+ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "")
 
 EXPECTED_MAPPING = {
     "CJ021": "CE94", "CJ031": "A100", "CJ032": "2CB0", "CJ041": "41",

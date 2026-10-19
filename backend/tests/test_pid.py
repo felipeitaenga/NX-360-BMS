@@ -11,8 +11,8 @@ BASE_URL = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/")
 FID = "6ad582734d4e3d846e9b14dc"
 DID = "TESTPID1"
 BROKER = "156.67.82.199"
-ADMIN = ("felipejferreira@gmail.com", "@Pilares1")
-OPERATOR = [("cj21@cj21.com", "@Pilares1"), ("cj21@cj21.com", "Cj21@2026")]
+ADMIN = ("felipejferreira@gmail.com", os.environ.get("TEST_ADMIN_PASSWORD", ""))
+OPERATOR = [("cj21@cj21.com", os.environ.get("TEST_ADMIN_PASSWORD", "")), ("cj21@cj21.com", os.environ.get("TEST_OPERATOR_PASSWORD", ""))]
 
 
 def _login(email, pw):

@@ -2,7 +2,7 @@
 from __future__ import annotations
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -61,6 +61,9 @@ class ControllerRegistry:
             elif var == "MODELO":
                 c["modelo"] = p.upper() or None
             elif var == "VERSAO":
+                prev = c.get("versao")
+                if p and prev and p != prev:
+                    await self._registrar_atualizacao(c, prev, p)
                 c["versao"] = p or None
             elif var == "RESET":
                 c["reset"] = p or None
@@ -69,6 +72,8 @@ class ControllerRegistry:
                     c["rssi" if var == "RSSI" else "uptime"] = int(float(p))
                 except ValueError:
                     pass
+                if var == "UPTIME" and c.get("uptime") is not None:
+                    self._atualizar_boot(c)
             elif var == "OTA/STATE":
                 c["ota_state"] = p or None
                 c["ota_state_at"] = c["last_seen"]
@@ -76,6 +81,36 @@ class ControllerRegistry:
 
     def get(self, device_id: str) -> dict:
         return self.items.get(device_id) or {}
+
+    @staticmethod
+    def _atualizar_boot(c: dict):
+        """last_boot_at = agora - uptime (minuto). Só muda se deslocar > 2 min (jitter de publicação)."""
+        boot = (datetime.now(timezone.utc) - timedelta(minutes=c["uptime"])).replace(second=0, microsecond=0)
+        atual = c.get("last_boot_at")
+        try:
+            desloc = abs((boot - datetime.fromisoformat(atual)).total_seconds()) if atual else None
+        except ValueError:
+            desloc = None
+        if desloc is None or desloc > 120:
+            c["last_boot_at"] = boot.isoformat()
+
+    @staticmethod
+    async def _registrar_atualizacao(c: dict, de: str, para: str):
+        """Versão mudou: grava data/hora e histórico. Origem OTA se houve OTA/STATE nos últimos 15 min."""
+        agora = now_iso()
+        origem = "manual"
+        ota_at = c.get("ota_state_at")
+        if ota_at and re.match(r"(?i)^(baixando|ok|reiniciando)", c.get("ota_state") or ""):
+            try:
+                if datetime.now(timezone.utc) - datetime.fromisoformat(ota_at) <= timedelta(minutes=15):
+                    origem = "OTA"
+            except ValueError:
+                pass
+        c["fw_updated_at"] = agora
+        c["fw_prev_version"] = de
+        await db.firmware_updates.insert_one(
+            {"device_id": c["device_id"], "de": de, "para": para, "em": agora, "origem": origem})
+        logger.info("Firmware %s: %s -> %s (%s)", c["device_id"], de, para, origem)
 
 
 registry = ControllerRegistry()
@@ -121,6 +156,9 @@ async def inventory() -> list:
             "rssi": r.get("rssi", fst.rssi if fst else None),
             "uptime_min": r.get("uptime", fst.uptime_min if fst else None),
             "reset_reason": r.get("reset") or (fst.reset_reason if fst else None),
+            "last_boot_at": r.get("last_boot_at") or (fst.reset_at if fst else None),
+            "fw_updated_at": r.get("fw_updated_at"),
+            "fw_prev_version": r.get("fw_prev_version"),
             "ota_state": r.get("ota_state") or (fst.ota_state if fst else None),
             "ota_state_at": r.get("ota_state_at") or (fst.ota_state_at if fst else None),
             "last_seen": r.get("last_seen") or (fst.last_update if fst else None),
@@ -130,6 +168,12 @@ async def inventory() -> list:
 
 async def get_controller(device_id: str) -> Optional[dict]:
     return next((c for c in await inventory() if c["device_id"] == device_id), None)
+
+
+@router.get("/admin/controllers/{device_id}/firmware-updates")
+async def firmware_updates(device_id: str, _: dict = Depends(require_admin)):
+    cur = db.firmware_updates.find({"device_id": device_id}, {"_id": 0}).sort("em", -1).limit(20)
+    return [d async for d in cur]
 
 
 # ---------------- Catálogo de modelos ----------------

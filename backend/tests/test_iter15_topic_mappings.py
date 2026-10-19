@@ -10,7 +10,7 @@ import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://fancoil-monitoring.preview.emergentagent.com").rstrip("/")
 ADMIN_EMAIL = "felipejferreira@gmail.com"
-ADMIN_PASS = "@Pilares1"
+ADMIN_PASS = os.environ.get("TEST_ADMIN_PASSWORD", "")
 
 TEST_TOPIC_UNIQUE = "/TESTE_RETEST15/XYZ"  # unique synthetic topic (never published) for CRUD
 A100_TOPIC = "/A100/TEMPERATURA"  # real published topic for routing verification

@@ -11,10 +11,10 @@ import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://fancoil-monitoring.preview.emergentagent.com").rstrip("/")
 ADMIN_EMAIL = "felipejferreira@gmail.com"
-ADMIN_PASS = "@Pilares1"
+ADMIN_PASS = os.environ.get("TEST_ADMIN_PASSWORD", "")
 CJ21_EMAIL = "cj21@cj21.com"
-# iteration_18 reports password was changed to Cj21@2027!x; try both
-CJ21_PASS_CANDIDATES = ["Cj21@2026", "Cj21@2027!x"]
+# senhas do operador via TEST_OPERATOR_PASSWORD e TEST_OPERATOR_PASSWORD2
+CJ21_PASS_CANDIDATES = [os.environ.get("TEST_OPERATOR_PASSWORD", ""), os.environ.get("TEST_OPERATOR_PASSWORD2", "")]
 CJ21_FANCOIL_ID = "6abe34775f994cb96b7b78dd"
 
 

@@ -28,11 +28,11 @@ def _load_backend_url():
 BASE_URL = _load_backend_url()
 
 ADMIN_EMAIL = "felipejferreira@gmail.com"
-ADMIN_PASSWORD = "@Pilares1"
+ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "")
 
 CJ21_EMAIL = "cj21@cj21.com"
-CJ21_INITIAL_PASSWORD = "Cj21@2026"
-CJ21_NEW_PASSWORD = "Cj21@2027!x"
+CJ21_INITIAL_PASSWORD = os.environ.get("TEST_OPERATOR_PASSWORD", "")
+CJ21_NEW_PASSWORD = os.environ.get("TEST_OPERATOR_PASSWORD2", "")
 
 
 def _login(email, password):
