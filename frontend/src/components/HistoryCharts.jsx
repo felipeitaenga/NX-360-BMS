@@ -27,6 +27,7 @@ function SharedTooltip({ active, payload }) {
       <div className="text-orange-400">Temperatura: {fmt(p.temperatura)} °C</div>
       <div className="text-emerald-400">Setpoint: {fmt(p.setpoint)} °C</div>
       <div className="text-sky-400">VAG: {fmt(p.vag, 0)}% ({fmt(p.vag_min, 0)}–{fmt(p.vag_max, 0)}%)</div>
+      {p.pid != null && <div className="text-violet-400">Saída PID: {fmt(p.pid, 0)}%</div>}
     </div>
   );
 }
@@ -49,6 +50,7 @@ export function HistoryCharts({ history, range }) {
       vag_min: h.vag_min ?? h.vag,
       vag_max: h.vag_max ?? h.vag,
       vag_range: h.vag == null ? null : [h.vag_min ?? h.vag, h.vag_max ?? h.vag],
+      pid: h.pid ?? null,
     })),
     [history]
   );
@@ -84,6 +86,7 @@ export function HistoryCharts({ history, range }) {
       <div className="flex gap-4 text-xs font-mono text-muted-foreground pl-12 pt-2">
         <span className="text-sky-400">— VAG média (%)</span>
         <span className="text-sky-300/70">▒ mín–máx</span>
+        {rows.some((r) => r.pid != null) && <span className="text-violet-400">- - Saída PID (%)</span>}
       </div>
       <div style={{ width: "100%", height: 110 }} data-testid="history-chart-vag">
         <ResponsiveContainer width="100%" height="100%">
@@ -94,6 +97,7 @@ export function HistoryCharts({ history, range }) {
             {tip}
             <Area type="monotone" dataKey="vag_range" stroke="none" fill="#38bdf8" fillOpacity={0.18} isAnimationActive={false} activeDot={false} />
             <Line type="monotone" dataKey="vag" stroke="#0ea5e9" strokeWidth={2} dot={false} isAnimationActive={false} />
+            <Line type="monotone" dataKey="pid" name="Saída PID (%)" stroke="#a78bfa" strokeWidth={1.5} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>

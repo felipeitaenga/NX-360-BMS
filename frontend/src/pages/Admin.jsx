@@ -15,6 +15,34 @@ import { UserPlus, Trash2, KeyRound, Upload, RefreshCw, Settings as SettingsIcon
 import { FirmwareTab, rssiColor, fmtUptime } from "../components/FirmwareTab";
 import { ControllerModelsTab } from "../components/firmware/ControllerModels";
 import { useTelemetry } from "../context/TelemetryContext";
+import { useAuth } from "../context/AuthContext";
+import { PidSection, initialPid, pidEqual, pidMatches, pidValid } from "../components/PidSection";
+
+// Acompanha a confirmação do PID (PID/CONFIG) após salvar; timeout 60 s
+function usePidWatcher() {
+  const { states } = useTelemetry();
+  const [pending, setPending] = useState([]);
+  React.useEffect(() => {
+    if (!pending.length) return;
+    const now = Date.now();
+    const rest = pending.filter((p) => {
+      const st = states[p.device_id] || {};
+      const cfg = st.pid_config;
+      const fresh = st.pid_config_at && new Date(st.pid_config_at).getTime() >= p.sentAt - 2000;
+      if (fresh && cfg?.erro) { toast.error(`PID ${p.name}: ${cfg.erro}`); return false; }
+      if (fresh && pidMatches(p.desired, cfg)) { toast.success(`PID aplicado na ${p.name}`); return false; }
+      if (now - p.sentAt > 60000) { toast.warning(`${p.name}: controladora não confirmou o PID`); return false; }
+      return true;
+    });
+    if (rest.length !== pending.length) setPending(rest);
+  }, [states, pending]);
+  React.useEffect(() => {
+    if (!pending.length) return;
+    const t = setInterval(() => setPending((p) => [...p]), 5000);
+    return () => clearInterval(t);
+  }, [pending.length]);
+  return (p) => setPending((prev) => [...prev.filter((x) => x.device_id !== p.device_id), p]);
+}
 
 const MODULES = [
   { id: "home", label: "Início" },
@@ -218,6 +246,7 @@ function FancoilsTab() {
   const { data: detected = [] } = useQuery({ queryKey: ["detected"], queryFn: async () => (await api.get("/admin/detected-devices")).data });
   const [form, setForm] = useState({ name: "", device_id: "", floor: "", side: 1, description: "" });
   const [editing, setEditing] = useState(null);
+  const watchPid = usePidWatcher();
 
   const create = async () => {
     try {
@@ -318,13 +347,25 @@ function FancoilsTab() {
         ))}
       </Card>
 
-      <EditFancoilDialog fancoil={editing} onClose={() => setEditing(null)} onSaved={() => qc.invalidateQueries({ queryKey: ["fancoils-admin"] })} />
+      <EditFancoilDialog fancoil={editing} onClose={() => setEditing(null)} onSaved={() => qc.invalidateQueries({ queryKey: ["fancoils-admin"] })} onPidSent={watchPid} />
     </div>
   );
 }
 
-function EditFancoilDialog({ fancoil, onClose, onSaved }) {
+function EditFancoilDialog({ fancoil, onClose, onSaved, onPidSent }) {
   const [form, setForm] = useState({});
+  const [pid, setPid] = useState(null);
+  const [pid0, setPid0] = useState(null);
+  const { user } = useAuth();
+  const { states } = useTelemetry();
+  const live = fancoil ? { ...fancoil, ...(states[fancoil.device_id] || {}) } : null;
+  React.useEffect(() => {
+    if (fancoil) {
+      const p = initialPid({ ...fancoil, ...(states[fancoil.device_id] || {}) });
+      setPid(p); setPid0(p);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fancoil]);
   React.useEffect(() => {
     if (fancoil) {
       setForm({
@@ -365,7 +406,16 @@ function EditFancoilDialog({ fancoil, onClose, onSaved }) {
     }
     try {
       await api.patch(`/fancoils/${fancoil.id}`, payload);
-      toast.success("Fancoil atualizado");
+      const pidChanged = user?.role === "admin" && live?.pid_config && !pidEqual(pid, pid0);
+      if (pidChanged) {
+        if (!pidValid(pid)) { toast.error("PID: algum valor está fora da faixa"); return; }
+        const sentAt = Date.now();
+        await api.post(`/devices/${fancoil.id}/pid`, pid);
+        toast("Fancoil salvo. Aguardando confirmação do PID…");
+        onPidSent?.({ device_id: newDid || fancoil.device_id, name: form.name || fancoil.name, desired: pid, sentAt });
+      } else {
+        toast.success("Fancoil atualizado");
+      }
       onSaved();
       onClose();
     } catch (e) {
@@ -428,6 +478,9 @@ function EditFancoilDialog({ fancoil, onClose, onSaved }) {
               <Label className="text-[10px] uppercase">Alarme temp. máxima (°C)</Label>
               <Input type="number" step="0.5" value={form.temp_alarm_max ?? ""} onChange={(e) => setForm({ ...form, temp_alarm_max: e.target.value })} data-testid="edit-fancoil-alarm-max" />
             </div>
+          </div>
+          <div className="border-t border-border pt-4">
+            <PidSection value={pid} onChange={setPid} live={live} isAdmin={user?.role === "admin"} />
           </div>
           <label className="flex items-center gap-2">
             <Switch checked={!!form.active} onCheckedChange={(v) => setForm({ ...form, active: v })} data-testid="edit-fancoil-active" />

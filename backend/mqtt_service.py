@@ -9,6 +9,7 @@ Topic format: {prefix}/{device_id}/{var}
 """
 from __future__ import annotations
 import asyncio
+import json
 import logging
 import os
 import random
@@ -32,6 +33,7 @@ EXTRA_FIELDS = (
     "cmd_real", "cmd_solicitado", "cmd_solicitado_at", "estado_real", "estado_solicitado",
     "estado_solicitado_at", "pressure_real", "reset_reason", "reset_at", "rssi", "uptime_min",
     "ota_state", "ota_state_at", "modelo", "tipo",
+    "pid_config", "pid_config_at", "pid_state", "pid_state_at", "setpoint_state",
 )
 
 
@@ -82,6 +84,11 @@ class FancoilState:
         self.ota_state_at: Optional[str] = None
         self.modelo: Optional[str] = None
         self.tipo: Optional[str] = None
+        self.pid_config: Optional[dict] = None
+        self.pid_config_at: Optional[str] = None
+        self.pid_state: Optional[dict] = None
+        self.pid_state_at: Optional[str] = None
+        self.setpoint_state: Optional[float] = None
         self.last_update: Optional[str] = None
         self.last_change_ts: float = time.time()
         # Schedule sync tracking (comparar o que o BMS enviou vs o que a controladora aplicou)
@@ -493,7 +500,10 @@ class MQTTService:
         st.last_update = now_iso()
 
         if var == "ONLINE":
+            was_online = st.online
             st.online = payload == "1"
+            if st.online and not was_online:
+                self._pid_check(device_id)
         elif var in ("STATUS", "ST"):
             st.status = payload == "1"
             st.online = True
@@ -566,6 +576,23 @@ class MQTTService:
         elif var in ("MODELO", "TIPO"):
             setattr(st, var.lower(), payload.strip().upper() or None)
             st.online = True
+        elif var in ("PID/CONFIG", "PID/STATE"):
+            try:
+                data = json.loads(payload) if payload.strip() else None
+            except ValueError:
+                data = None
+            if isinstance(data, dict) or data is None:
+                key = "pid_config" if var == "PID/CONFIG" else "pid_state"
+                setattr(st, key, data)
+                setattr(st, f"{key}_at", now_iso())
+                st.online = True
+                if var == "PID/CONFIG":
+                    self._pid_check(device_id)
+        elif var == "SETPOINT/STATE":
+            try:
+                st.setpoint_state = float(payload)
+            except ValueError:
+                st.setpoint_state = None
         elif var == "RESET":
             st.reset_reason = payload.strip() or None
             st.reset_at = now_iso()
@@ -631,6 +658,10 @@ class MQTTService:
         if var in ("TEMPERATURA", "SETPOINT/SET", "VAG", "STATUS") and st.online:
             await self._maybe_save_history(st)
 
+    def _pid_check(self, device_id: str):
+        from pid import pid_auto_resend
+        asyncio.create_task(pid_auto_resend(device_id))
+
     async def _maybe_save_history(self, st: FancoilState):
         now = datetime.now(timezone.utc)
         minute_key = now.replace(second=0, microsecond=0).isoformat()
@@ -641,6 +672,7 @@ class MQTTService:
             "temperature": st.temperature,
             "setpoint": st.setpoint,
             "vag": st.vag,
+            "pid": (st.pid_state or {}).get("pid"),
             "status": st.status,
         }
         acc, avg = {}, {}

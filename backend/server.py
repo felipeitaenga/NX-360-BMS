@@ -19,6 +19,7 @@ from lighting_routes import router as lighting_router
 from password_reset import router as pwd_router
 from firmware_routes import router as firmware_router, migrate_firmwares
 from controllers import router as controllers_router, registry, seed_models
+from pid import router as pid_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("app")
@@ -43,6 +44,7 @@ app.include_router(lighting_router)
 app.include_router(pwd_router)
 app.include_router(firmware_router)
 app.include_router(controllers_router)
+app.include_router(pid_router)
 
 
 @app.get("/api/health")

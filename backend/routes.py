@@ -63,6 +63,7 @@ def _fancoil_out(fc: dict, state=None) -> dict:
         "temp_alarm_min": fc.get("temp_alarm_min", 15.0),
         "temp_alarm_max": fc.get("temp_alarm_max", 30.0),
         "active": fc.get("active", True),
+        "pid_desejado": fc.get("pid_desejado"),
     }
     base.update(st.to_dict())
     base.pop("device_id", None)
@@ -490,6 +491,7 @@ async def get_history(fancoil_id: str, days: int = 1, user: dict = Depends(get_c
             "vag": {"$avg": vag_avg},
             "vag_min": {"$min": {"$ifNull": ["$vag_min", "$vag"]}},
             "vag_max": {"$max": {"$ifNull": ["$vag_max", "$vag"]}},
+            "pid": {"$avg": "$pid"},
             "samples": {"$sum": 1},
         }},
         {"$sort": {"_id": 1}},

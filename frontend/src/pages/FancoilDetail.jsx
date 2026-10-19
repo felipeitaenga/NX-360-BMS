@@ -12,6 +12,7 @@ import { ArrowLeft, Minus, Plus, Power, Hand, Wifi, WifiOff } from "lucide-react
 import FancoilSchematicSVG from "../components/FancoilSchematicSVG";
 import { HistoryCharts } from "../components/HistoryCharts";
 import { FirmwareUpdateDialog } from "../components/firmware/FirmwareUpdateDialog";
+import { PidRealtimePanel } from "../components/PidRealtimePanel";
 
 function IndicatorRow({ label, value, color, testid, pending }) {
   return (
@@ -171,6 +172,8 @@ export default function FancoilDetail() {
           )}
         </Card>
       </div>
+
+      <PidRealtimePanel st={fcs} />
 
       {/* COMANDOS — largura total, abaixo */}
       {canCommand && (

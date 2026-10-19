@@ -11,6 +11,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../com
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "../components/ui/alert-dialog";
 import { toast } from "sonner";
 import { Wind, Hand, WifiOff, Search, Power, PowerOff, Zap, RotateCcw, Loader2 } from "lucide-react";
+import { pidLabel } from "../components/PidSection";
 
 function statusColor(st, fc) {
   const online = st.online ?? fc.online;
@@ -94,6 +95,11 @@ function FancoilItem({ fc, state, hasAlarm, side }) {
         {side === 2 && <span className="text-muted-foreground hidden sm:inline"> -</span>}
         {side === 2 && <span className="font-display font-bold text-base text-foreground order-first sm:order-none"> {fc.name}</span>}
       </div>
+      {(state.pid_config ?? fc.pid_config)?.perfil && (
+        <span className="hidden md:inline text-[9px] font-mono px-1.5 py-0.5 rounded border border-border text-muted-foreground shrink-0" data-testid={`fancoil-pid-${fc.name.toLowerCase()}`}>
+          PID: {pidLabel((state.pid_config ?? fc.pid_config).perfil)}
+        </span>
+      )}
       {forced && <Hand className="w-4 h-4 text-amber-400" strokeWidth={2} />}
       {!online && <WifiOff className="w-4 h-4 text-slate-500" />}
       <Dot kind={kind} hasAlarm={hasAlarm} />
