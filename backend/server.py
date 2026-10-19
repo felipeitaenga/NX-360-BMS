@@ -20,6 +20,7 @@ from password_reset import router as pwd_router
 from firmware_routes import router as firmware_router, migrate_firmwares
 from controllers import router as controllers_router, registry, seed_models
 from pid import router as pid_router
+from agendas import router as agendas_router, migrar_agendas
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("app")
@@ -45,6 +46,7 @@ app.include_router(pwd_router)
 app.include_router(firmware_router)
 app.include_router(controllers_router)
 app.include_router(pid_router)
+app.include_router(agendas_router)
 
 
 @app.get("/api/health")
@@ -58,6 +60,7 @@ async def _startup():
     await run_all_seeds()
     await seed_models()
     await migrate_firmwares()
+    await migrar_agendas()
     await registry.restore()
     lighting_svc.set_mqtt(svc)
     import asyncio

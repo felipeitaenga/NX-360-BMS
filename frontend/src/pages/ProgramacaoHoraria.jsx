@@ -1,489 +1,389 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, formatApiError } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import {
-  Clock, Wind, ChevronDown, ChevronRight, Globe2,
-  Power, PowerOff, Hand, Cog, Thermometer, Plus,
-  AlertTriangle, CheckCircle2, Info, WifiOff, Zap, Copy,
-} from "lucide-react";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "../components/ui/alert-dialog";
+import { Checkbox } from "../components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "../components/ui/select";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { toast } from "sonner";
-import SchedulesPanel from "../components/SchedulesPanel";
+import {
+  Clock, Plus, Trash2, Star, Save, CheckCircle2, AlertTriangle, WifiOff, Send, Pencil, CalendarClock, Info,
+} from "lucide-react";
 
-async function copyFirmwarePrompt() {
-  try {
-    const txt = await (await fetch("/esp32_schedule_prompt.md", { cache: "no-store" })).text();
-    await navigator.clipboard.writeText(txt);
-    toast.success("Prompt do firmware copiado");
-  } catch {
-    window.open("/esp32_schedule_prompt.md", "_blank");
-  }
-}
-
+// Dias: 0=Dom..6=Sáb (padrão do firmware). Exibição começa na segunda.
 const DAYS = [
-  { v: 1, short: "Seg" },
-  { v: 2, short: "Ter" },
-  { v: 3, short: "Qua" },
-  { v: 4, short: "Qui" },
-  { v: 5, short: "Sex" },
-  { v: 6, short: "Sáb" },
-  { v: 0, short: "Dom" },
+  { v: 1, s: "Seg" }, { v: 2, s: "Ter" }, { v: 3, s: "Qua" }, { v: 4, s: "Qui" },
+  { v: 5, s: "Sex" }, { v: 6, s: "Sáb" }, { v: 0, s: "Dom" },
 ];
-
 const PRESETS = [
-  { id: "weekdays", label: "Dias úteis", days: [1, 2, 3, 4, 5] },
-  { id: "weekend", label: "Fim de semana", days: [0, 6] },
-  { id: "all", label: "Todos os dias", days: [0, 1, 2, 3, 4, 5, 6] },
+  { l: "Dias úteis", d: [1, 2, 3, 4, 5] },
+  { l: "Fim de semana", d: [0, 6] },
+  { l: "Todos", d: [0, 1, 2, 3, 4, 5, 6] },
 ];
+const MAX_EVENTOS = 10;
+const novoPeriodo = () => ({ dias: [1, 2, 3, 4, 5], liga: "07:00", desliga: "20:00", setpoint: null });
+const toMin = (h) => { const [a, b] = String(h || "0:0").split(":").map(Number); return a * 60 + b; };
 
-const TABS = [
-  { key: "onoff", label: "Ligar / Desligar", icon: Power, color: "emerald", defaultValue: "true" },
-  { key: "mode", label: "Modo (Auto / Forçado)", icon: Cog, color: "sky", defaultValue: "true" },
-  { key: "temp", label: "Temperatura (Setpoint)", icon: Thermometer, color: "amber", defaultValue: "22" },
-];
-
-function friendlySummary(tabKey, value) {
-  const v = String(value).toLowerCase();
-  if (tabKey === "onoff") return v === "true" ? "Ligar o ar-condicionado" : "Desligar o ar-condicionado";
-  if (tabKey === "mode") return v === "true" ? "Modo Automático" : "Modo Forçado (manual)";
-  return `Temperatura ${value}°C`;
+/* ---------- Linha do tempo da semana ---------- */
+function WeekTimeline({ periodos }) {
+  return (
+    <div className="space-y-1" data-testid="agenda-timeline">
+      {DAYS.map((d) => (
+        <div key={d.v} className="flex items-center gap-2">
+          <div className="w-9 text-[11px] font-mono text-muted-foreground">{d.s}</div>
+          <div className="relative flex-1 h-4 rounded bg-muted/50 overflow-hidden">
+            {[6, 12, 18].map((h) => <div key={h} className="absolute top-0 bottom-0 w-px bg-border" style={{ left: `${(h / 24) * 100}%` }} />)}
+            {periodos.filter((p) => p.dias.includes(d.v)).map((p, i) => {
+              const a = toMin(p.liga), b = p.desliga ? toMin(p.desliga) : 1440;
+              return (
+                <div key={i} className="absolute top-0 bottom-0 bg-emerald-500/60 rounded" title={`${p.liga}–${p.desliga || "24h"}`}
+                  style={{ left: `${(a / 1440) * 100}%`, width: `${(Math.max(b - a, 5) / 1440) * 100}%` }} />
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      <div className="flex justify-between pl-11 text-[10px] font-mono text-muted-foreground"><span>0h</span><span>6h</span><span>12h</span><span>18h</span><span>24h</span></div>
+    </div>
+  );
 }
 
-/* --------- Programação Geral (todas as controladoras) --------- */
-function BulkScheduleCard({ visibleFancoils, onCreated }) {
-  const [activeTab, setActiveTab] = useState("onoff");
-  const [form, setForm] = useState({ hour: 7, minute: 0, value: "true", days: [1, 2, 3, 4, 5] });
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [sending, setSending] = useState(false);
-
-  const switchTab = (key) => {
-    const t = TABS.find((x) => x.key === key);
-    setActiveTab(key);
-    setForm((p) => ({ ...p, value: t.defaultValue, hour: key === "onoff" && p.value === "true" ? 7 : p.hour }));
+/* ---------- Editor de períodos (agenda ou individual) ---------- */
+function PeriodsEditor({ value, onChange, readOnly }) {
+  const upd = (i, patch) => onChange(value.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+  const toggleDay = (i, d) => {
+    const dias = value[i].dias.includes(d) ? value[i].dias.filter((x) => x !== d) : [...value[i].dias, d];
+    upd(i, { dias });
   };
-
-  const toggleDay = (d) =>
-    setForm((p) => ({
-      ...p,
-      days: p.days.includes(d) ? p.days.filter((x) => x !== d) : [...p.days, d].sort(),
-    }));
-
-  const applyPreset = (preset) => setForm((p) => ({ ...p, days: [...preset.days] }));
-
-  const submit = async () => {
-    setSending(true);
-    const action = activeTab === "onoff" ? "cmd" : activeTab === "mode" ? "estado" : "setpoint";
-    try {
-      const res = await api.post("/schedules/bulk", {
-        hour: form.hour,
-        minute: form.minute,
-        action,
-        value: String(form.value),
-        days: form.days,
-        enabled: true,
-      });
-      toast.success(`Agendamento aplicado em ${res.data.created_count} fancoil(s)`);
-      if (res.data.skipped_count > 0) {
-        toast.warning(`${res.data.skipped_count} fancoil(s) ignorado(s) — veja o console`);
-        console.warn("[prog geral] skipped:", res.data.skipped);
-      }
-      toast.message("Atenção", {
-        description:
-          "A controladora pode aplicar imediatamente o estado do horário atual.",
-        icon: <Info className="w-4 h-4" />,
-      });
-      setConfirmOpen(false);
-      onCreated?.();
-    } catch (e) {
-      toast.error(formatApiError(e));
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const currentTab = TABS.find((t) => t.key === activeTab);
-  const CurrentIcon = currentTab.icon;
-  const summary = friendlySummary(activeTab, form.value);
-
   return (
-    <Card
-      data-testid="bulk-schedule-card"
-      className="p-5 border-2 border-sky-500/40 bg-gradient-to-br from-sky-500/5 to-cyan-500/5"
-    >
-      <div className="flex items-center gap-3 mb-4">
-        <div className="p-2 rounded-lg bg-sky-500/20 text-sky-300">
-          <Globe2 className="w-6 h-6" strokeWidth={1.75} />
-        </div>
-        <div>
-          <h2 className="font-display text-lg font-black uppercase tracking-wider text-sky-200">
-            Programação Geral
-          </h2>
-          <div className="text-xs text-muted-foreground">
-            Aplica o mesmo agendamento a <b>todos os {visibleFancoils.length} fancoil(s)</b> que você tem acesso.
-          </div>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
-        {TABS.map((t) => {
-          const Icon = t.icon;
-          const active = activeTab === t.key;
-          const ring = {
-            emerald: active ? "border-emerald-400 bg-emerald-500/10 text-emerald-200" : "border-border hover:border-emerald-400/40",
-            sky: active ? "border-sky-400 bg-sky-500/10 text-sky-200" : "border-border hover:border-sky-400/40",
-            amber: active ? "border-amber-400 bg-amber-500/10 text-amber-200" : "border-border hover:border-amber-400/40",
-          }[t.color];
-          return (
-            <button
-              key={t.key}
-              onClick={() => switchTab(t.key)}
-              data-testid={`bulk-tab-${t.key}`}
-              className={`flex items-center gap-2 p-3 rounded-lg border-2 transition-all text-left ${ring}`}
-            >
-              <Icon className="w-5 h-5" strokeWidth={1.75} />
-              <div className="font-display font-bold text-sm">{t.label}</div>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Form row */}
-      <div className="grid grid-cols-1 lg:grid-cols-[auto_auto_1fr] gap-3 items-end mb-4">
-        <div>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Horário</div>
-          <div className="flex items-center gap-1">
-            <Input
-              type="number" min={0} max={23}
-              value={form.hour}
-              onChange={(e) => setForm({ ...form, hour: Math.min(23, Math.max(0, parseInt(e.target.value || 0))) })}
-              className="w-16 text-center font-display text-lg font-black tabular-nums"
-              data-testid="bulk-hour"
-            />
-            <span className="font-display text-2xl font-black text-sky-400">:</span>
-            <Input
-              type="number" min={0} max={59}
-              value={form.minute}
-              onChange={(e) => setForm({ ...form, minute: Math.min(59, Math.max(0, parseInt(e.target.value || 0))) })}
-              className="w-16 text-center font-display text-lg font-black tabular-nums"
-              data-testid="bulk-minute"
-            />
-          </div>
-        </div>
-
-        <div>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-            {activeTab === "temp" ? "Temperatura (°C)" : "Ação"}
-          </div>
-          {activeTab === "onoff" && (
-            <div className="flex gap-1">
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, value: "true" })}
-                data-testid="bulk-value-ligar"
-                className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-semibold border-2 ${
-                  form.value === "true" ? "bg-emerald-600 text-white border-emerald-500" : "bg-muted text-muted-foreground border-border"
-                }`}
-              >
-                <Power className="w-4 h-4" /> Ligar
-              </button>
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, value: "false" })}
-                data-testid="bulk-value-desligar"
-                className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-semibold border-2 ${
-                  form.value === "false" ? "bg-rose-600 text-white border-rose-500" : "bg-muted text-muted-foreground border-border"
-                }`}
-              >
-                <PowerOff className="w-4 h-4" /> Desligar
-              </button>
+    <div className="space-y-2">
+      {value.map((p, i) => (
+        <div key={i} className="rounded-md border border-border bg-background/40 p-3 flex flex-col xl:flex-row xl:items-end gap-3" data-testid={`periodo-${i}`}>
+          <div className="text-xs font-mono text-muted-foreground xl:w-6 xl:pb-2">{i + 1}</div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1 flex flex-wrap items-center gap-2">
+              Dias
+              {!readOnly && PRESETS.map((pr) => (
+                <button key={pr.l} type="button" className="normal-case tracking-normal hover:underline text-sky-300/80" onClick={() => upd(i, { dias: pr.d })}>{pr.l}</button>
+              ))}
             </div>
-          )}
-          {activeTab === "mode" && (
-            <div className="flex gap-1">
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, value: "true" })}
-                data-testid="bulk-value-auto"
-                className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-semibold border-2 ${
-                  form.value === "true" ? "bg-sky-600 text-white border-sky-500" : "bg-muted text-muted-foreground border-border"
-                }`}
-              >
-                <Cog className="w-4 h-4" /> Automático
-              </button>
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, value: "false" })}
-                data-testid="bulk-value-forcado"
-                className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-semibold border-2 ${
-                  form.value === "false" ? "bg-orange-600 text-white border-orange-500" : "bg-muted text-muted-foreground border-border"
-                }`}
-              >
-                <Hand className="w-4 h-4" /> Forçado
-              </button>
+            <div className="grid grid-cols-7 gap-1">
+              {DAYS.map((d) => (
+                <button key={d.v} type="button" disabled={readOnly} onClick={() => toggleDay(i, d.v)}
+                  className={`py-1.5 rounded text-[11px] font-mono border transition-colors ${p.dias.includes(d.v) ? "bg-sky-600 text-white border-sky-500" : "bg-muted/40 text-muted-foreground border-border"} disabled:cursor-default`}>
+                  {d.s}
+                </button>
+              ))}
             </div>
-          )}
-          {activeTab === "temp" && (
-            <div className="flex items-center gap-1">
-              <Input
-                type="number" min={10} max={35} step="0.5"
-                value={form.value}
-                onChange={(e) => setForm({ ...form, value: e.target.value })}
-                className="w-24 text-center font-display text-lg font-black tabular-nums"
-                data-testid="bulk-value-temp"
-              />
-              <span className="font-display text-xl font-black text-amber-400">°C</span>
-            </div>
-          )}
-        </div>
-
-        <Button
-          onClick={() => setConfirmOpen(true)}
-          disabled={visibleFancoils.length === 0 || form.days.length === 0}
-          data-testid="bulk-submit-button"
-          className="w-full lg:w-auto bg-sky-600 hover:bg-sky-500 font-bold"
-        >
-          <Plus className="w-4 h-4 mr-2" /> Aplicar em todos
-        </Button>
-      </div>
-
-      {/* Dias */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Dias da semana</div>
-          <div className="flex gap-1">
-            {PRESETS.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => applyPreset(p)}
-                data-testid={`bulk-preset-${p.id}`}
-                className="text-[10px] uppercase tracking-wider px-2 py-1 rounded border border-border hover:border-sky-400 text-muted-foreground hover:text-sky-300"
-              >
-                {p.label}
-              </button>
-            ))}
           </div>
-        </div>
-        <div className="grid grid-cols-7 gap-1">
-          {DAYS.map((d) => {
-            const sel = form.days.includes(d.v);
-            const weekend = d.v === 0 || d.v === 6;
-            return (
-              <button
-                key={d.v}
-                type="button"
-                onClick={() => toggleDay(d.v)}
-                data-testid={`bulk-day-${d.v}`}
-                className={`py-2 rounded font-mono text-xs uppercase tracking-wider border-2 transition-all ${
-                  sel
-                    ? "bg-sky-600 text-white border-sky-500 font-bold"
-                    : weekend
-                    ? "bg-muted/40 text-muted-foreground/70 border-border"
-                    : "bg-muted text-muted-foreground border-border hover:border-sky-400/40"
-                }`}
-              >
-                {d.short}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Diálogo de confirmação */}
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-amber-400" /> Aplicar programação em todos?
-            </AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-2 text-sm">
-                <div>
-                  Será criado o agendamento abaixo em <b>{visibleFancoils.length} fancoil(s)</b>:
-                </div>
-                <div className="p-3 rounded bg-slate-800/60 border border-border font-mono text-xs space-y-1">
-                  <div className="flex items-center gap-2">
-                    <CurrentIcon className="w-4 h-4" />
-                    <span className="font-bold">{summary}</span>
-                  </div>
-                  <div>
-                    Horário: <b>{String(form.hour).padStart(2, "0")}:{String(form.minute).padStart(2, "0")}</b>
-                  </div>
-                  <div>
-                    Dias:{" "}
-                    <b>
-                      {form.days.length === 7
-                        ? "Todos"
-                        : DAYS.filter((d) => form.days.includes(d.v)).map((d) => d.short).join(", ")}
-                    </b>
-                  </div>
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  Os agendamentos individuais existentes serão <b>mantidos</b>. Este agendamento será adicionado em cada fancoil.
-                </div>
+          <div className="grid grid-cols-3 gap-2 xl:w-[360px]">
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Liga</div>
+              <Input type="time" value={p.liga} disabled={readOnly} onChange={(e) => upd(i, { liga: e.target.value })} data-testid={`periodo-liga-${i}`} />
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1 flex items-center justify-between">
+                Desliga
+                {!readOnly && (
+                  <label className="normal-case tracking-normal flex items-center gap-1 cursor-pointer" title="Fica ligado até o fim do dia">
+                    <input type="checkbox" checked={!p.desliga} onChange={(e) => upd(i, { desliga: e.target.checked ? null : "20:00" })} /> 24h
+                  </label>
+                )}
               </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={sending}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              data-testid="bulk-confirm-button"
-              onClick={submit}
-              disabled={sending}
-              className="bg-sky-600 hover:bg-sky-500"
-            >
-              {sending ? "Enviando..." : <><CheckCircle2 className="w-4 h-4 mr-2" /> Confirmar</>}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </Card>
+              {p.desliga
+                ? <Input type="time" value={p.desliga} disabled={readOnly} onChange={(e) => upd(i, { desliga: e.target.value })} data-testid={`periodo-desliga-${i}`} />
+                : <div className="h-10 flex items-center text-xs text-muted-foreground">não desliga</div>}
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Setpoint °C</div>
+              <Input type="number" step="0.5" min="10" max="35" placeholder="—" title="Vazio = mantém o setpoint atual" disabled={readOnly}
+                value={p.setpoint ?? ""} onChange={(e) => upd(i, { setpoint: e.target.value === "" ? null : Number(e.target.value) })} />
+            </div>
+          </div>
+          {!readOnly && (
+            <Button variant="outline" size="sm" className="self-end" onClick={() => onChange(value.filter((_, j) => j !== i))} title="Remover período">
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
+      ))}
+      {!value.length && <div className="text-sm text-muted-foreground px-1">Nenhum período — quem seguir esta agenda não liga nem desliga sozinho.</div>}
+      {!readOnly && (
+        <Button variant="outline" size="sm" onClick={() => onChange([...value, novoPeriodo()])} data-testid="periodo-add">
+          <Plus className="w-4 h-4 mr-1" /> Adicionar período
+        </Button>
+      )}
+    </div>
   );
 }
 
-/* --------- Banner: fancoils online sem agenda --------- */
-function OnlineWithoutScheduleBanner() {
-  const { data = [] } = useQuery({
-    queryKey: ["schedules-health"],
-    queryFn: async () => (await api.get("/schedules/health/online-sem-agenda")).data,
-    refetchInterval: 30000,
-  });
-  if (!data.length) return null;
-  return (
-    <Card
-      data-testid="online-without-schedule-banner"
-      className="p-4 border-2 border-amber-500/60 bg-amber-500/5"
-    >
-      <div className="flex items-start gap-3">
-        <div className="p-2 rounded-lg bg-amber-500/20 text-amber-300">
-          <WifiOff className="w-5 h-5" />
-        </div>
-        <div className="flex-1">
-          <div className="font-display font-bold text-sm uppercase tracking-wider text-amber-200 mb-1">
-            {data.length} controladora(s) online sem agenda
-          </div>
-          <div className="text-xs text-muted-foreground mb-2">
-            As controladoras abaixo estão conectadas, mas <b>ainda não têm nenhum agendamento cadastrado</b>.
-            Elas vão operar só pelos comandos manuais / modo automático até você adicionar uma programação.
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {data.map((f) => (
-              <span
-                key={f.fancoil_id}
-                data-testid={`online-no-sched-${f.name.toLowerCase()}`}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded border border-amber-500/40 bg-amber-500/10 text-amber-100 text-xs font-mono"
-              >
-                <Zap className="w-3 h-3" /> {f.name} ({f.device_id})
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-    </Card>
-  );
+/* Validação no servidor (mesma regra usada ao enviar para a controladora) */
+function usePreview(periodos) {
+  const [res, setRes] = useState(null);
+  const key = JSON.stringify(periodos);
+  useEffect(() => {
+    let alive = true;
+    const t = setTimeout(async () => {
+      try { const r = await api.post("/agendas/preview", { periodos: JSON.parse(key) }); if (alive) setRes(r.data); } catch { /* ignora */ }
+    }, 300);
+    return () => { alive = false; clearTimeout(t); };
+  }, [key]);
+  return res;
 }
 
-/* --------- Página --------- */
-export default function ProgramacaoHoraria() {
-  const { user } = useAuth();
+function PreviewBadge({ prev }) {
+  if (!prev) return null;
+  if (!prev.ok) return <div className="text-xs text-red-400 flex items-start gap-1" data-testid="agenda-erro"><AlertTriangle className="w-4 h-4 shrink-0" /> {prev.erro}</div>;
+  return <div className="text-xs text-muted-foreground font-mono">{prev.n_eventos}/{MAX_EVENTOS} eventos na controladora</div>;
+}
+
+/* ---------- Agendas (modelos) ---------- */
+function AgendasCard({ agendas, isAdmin }) {
   const qc = useQueryClient();
-  const { data: fancoils = [] } = useQuery({
-    queryKey: ["fancoils"],
-    queryFn: async () => (await api.get("/fancoils")).data,
-    refetchInterval: 60000,
-  });
-  const [filter, setFilter] = useState("");
-  const [expanded, setExpanded] = useState({});
+  const [selId, setSelId] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const nova = selId === "nova";
+  const sel = nova ? null : agendas.find((a) => a.id === selId) || agendas[0];
+  useEffect(() => {
+    if (nova) setDraft({ nome: "", periodos: [novoPeriodo()] });
+    else if (sel) setDraft({ nome: sel.nome, periodos: sel.periodos });
+  }, [nova, sel?.id, sel?.atualizado_em]); // eslint-disable-line react-hooks/exhaustive-deps
+  const prev = usePreview(draft?.periodos || []);
+  const dirty = nova || (draft && sel && (draft.nome !== sel.nome || JSON.stringify(draft.periodos) !== JSON.stringify(sel.periodos)));
+  const refresh = () => { qc.invalidateQueries({ queryKey: ["agendas"] }); qc.invalidateQueries({ queryKey: ["prog-fancoils"] }); };
 
-  const canCommand = user?.role !== "viewer";
-
-  const visibleFancoils = useMemo(() => {
-    const act = fancoils.filter((f) => f.active !== false && f.authorized !== false);
-    if (!filter) return act;
-    const q = filter.toLowerCase();
-    return act.filter((f) => f.name.toLowerCase().includes(q) || String(f.floor).includes(q));
-  }, [fancoils, filter]);
-
-  const onBulkCreated = () => {
-    // invalida todas as queries de schedules
-    qc.invalidateQueries({ queryKey: ["schedules"] });
+  const salvar = async () => {
+    setBusy(true);
+    try {
+      if (nova) {
+        const r = await api.post("/agendas", draft);
+        toast.success(`Agenda "${r.data.nome}" criada`);
+        setSelId(r.data.id);
+      } else {
+        const r = await api.put(`/agendas/${sel.id}`, draft);
+        toast.success(r.data.publicados ? `Agenda salva e enviada para ${r.data.publicados} fancoil(s)` : "Agenda salva");
+      }
+      refresh();
+    } catch (e) { toast.error(formatApiError(e)); }
+    setBusy(false);
+  };
+  const excluir = async () => {
+    if (!window.confirm(`Excluir a agenda "${sel.nome}"?`)) return;
+    try { await api.delete(`/agendas/${sel.id}`); setSelId(null); refresh(); } catch (e) { toast.error(formatApiError(e)); }
+  };
+  const padrao = async () => {
+    try { await api.post(`/agendas/${sel.id}/padrao`); toast.success(`"${sel.nome}" agora é a padrão`); refresh(); } catch (e) { toast.error(formatApiError(e)); }
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6" data-testid="programacao-horaria-page">
-      <div>
-        <h1 className="font-display text-3xl lg:text-4xl font-black tracking-tight uppercase flex items-center gap-3">
-          <Clock className="w-8 h-8 text-sky-400" /> Programação Horária
-        </h1>
-        <div className="text-muted-foreground text-sm mt-1">
-          A programação é <b>enviada à controladora via MQTT</b> (tópico <code className="font-mono text-xs">SCHEDULE/SET</code>, retained).
-          O ESP32 armazena e executa internamente. Em <b>Automático</b> o fancoil segue a programação;
-          em <b>Forçado</b> segue apenas o comando manual até voltar para Automático.
-          A controladora publica o estado real em <code className="font-mono text-xs">CMD</code>/<code className="font-mono text-xs">ESTADO</code>/<code className="font-mono text-xs">PRESSAO</code> (sem /SET) e nunca ecoa em /SET.
-        </div>
-        <Button variant="outline" size="sm" className="mt-3 gap-2" onClick={copyFirmwarePrompt} data-testid="copy-firmware-prompt-btn">
-          <Copy className="w-4 h-4" /> Copiar prompt do firmware ESP32
-        </Button>
-      </div>
-
-      {canCommand && <BulkScheduleCard visibleFancoils={visibleFancoils} onCreated={onBulkCreated} />}
-
-      <OnlineWithoutScheduleBanner />
-
-      <div className="flex items-center gap-3">
-        <Input
-          placeholder="Buscar fancoil (ex.: CJ171, 17)..."
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          data-testid="prog-horaria-search"
-          className="max-w-sm"
-        />
-        <div className="text-xs text-muted-foreground">
-          {visibleFancoils.length} fancoil(s) acessível(is)
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        {visibleFancoils.map((fc) => {
-          const open = !!expanded[fc.id];
-          return (
-            <Card key={fc.id} data-testid={`prog-fc-${fc.name.toLowerCase()}`} className="overflow-hidden">
-              <button
-                onClick={() => setExpanded((p) => ({ ...p, [fc.id]: !p[fc.id] }))}
-                className="w-full flex items-center gap-3 p-4 hover:bg-accent/10 text-left"
-                data-testid={`prog-fc-toggle-${fc.name.toLowerCase()}`}
-              >
-                <Wind className={`w-5 h-5 ${fc.online ? "text-sky-400" : "text-slate-600"}`} />
-                <div className="flex-1 min-w-0">
-                  <div className="font-display font-bold text-base">{fc.name}</div>
-                  <div className="text-xs text-muted-foreground font-mono uppercase tracking-wider">
-                    {fc.floor}º andar • Lado {fc.side} • {fc.device_id}
-                  </div>
-                </div>
-                {open ? <ChevronDown className="w-5 h-5 text-muted-foreground" /> : <ChevronRight className="w-5 h-5 text-muted-foreground" />}
-              </button>
-              {open && (
-                <div className="px-4 pb-4 pt-2 border-t border-border/60">
-                  <SchedulesPanel fancoilId={fc.id} canEdit={canCommand} />
-                </div>
-              )}
-            </Card>
-          );
-        })}
-        {visibleFancoils.length === 0 && (
-          <Card className="p-8 text-center text-muted-foreground text-sm">
-            Nenhum fancoil disponível para programação.
-          </Card>
+    <Card className="p-4 sm:p-5 space-y-4" data-testid="agendas-card">
+      <div className="flex flex-wrap items-center gap-2">
+        <CalendarClock className="w-5 h-5 text-sky-400" />
+        <h2 className="font-display text-sm uppercase tracking-widest mr-2">Agendas</h2>
+        {agendas.map((a) => (
+          <button key={a.id} type="button" onClick={() => setSelId(a.id)} data-testid={`agenda-tab-${a.nome}`}
+            className={`px-3 py-1.5 rounded-md border text-sm flex items-center gap-1.5 ${sel?.id === a.id ? "bg-sky-500/15 border-sky-500/50 text-sky-200" : "border-border hover:bg-muted/40"}`}>
+            {a.padrao && <Star className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />}{a.nome}
+            <span className="text-[10px] font-mono text-muted-foreground">({a.n_fancoils})</span>
+          </button>
+        ))}
+        {isAdmin && (
+          <button type="button" onClick={() => setSelId("nova")} data-testid="agenda-nova"
+            className={`px-3 py-1.5 rounded-md border border-dashed text-sm flex items-center gap-1 ${nova ? "border-sky-500/60 text-sky-200" : "border-border text-muted-foreground hover:bg-muted/40"}`}>
+            <Plus className="w-3.5 h-3.5" /> Nova agenda
+          </button>
         )}
       </div>
+
+      {draft && (
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px] gap-5">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {isAdmin
+                ? <Input className="max-w-xs font-bold" placeholder="Nome da agenda" value={draft.nome} onChange={(e) => setDraft({ ...draft, nome: e.target.value })} data-testid="agenda-nome" />
+                : <div className="font-bold">{draft.nome}</div>}
+              {sel?.padrao && <span className="text-[10px] px-2 py-0.5 rounded-full border border-amber-400/40 text-amber-300">padrão</span>}
+              {sel && <span className="text-xs text-muted-foreground">{sel.n_fancoils} fancoil(s) seguem</span>}
+            </div>
+            <PeriodsEditor value={draft.periodos} onChange={(periodos) => setDraft({ ...draft, periodos })} readOnly={!isAdmin} />
+          </div>
+          <div className="space-y-3">
+            <WeekTimeline periodos={draft.periodos} />
+            <PreviewBadge prev={prev} />
+            <div className="text-xs text-muted-foreground flex gap-1.5"><Info className="w-4 h-4 shrink-0" />
+              No horário de desligar a controladora volta para Automático e desliga — nenhuma fica ligada esquecida em Forçado.
+            </div>
+            {isAdmin && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button onClick={salvar} disabled={busy || !dirty || (prev && !prev.ok)} data-testid="agenda-salvar">
+                  <Save className="w-4 h-4 mr-1" />{nova ? "Criar agenda" : sel?.n_fancoils ? `Salvar e enviar (${sel.n_fancoils})` : "Salvar"}
+                </Button>
+                {sel && !sel.padrao && <Button variant="outline" onClick={padrao}><Star className="w-4 h-4 mr-1" />Tornar padrão</Button>}
+                {sel && !sel.padrao && <Button variant="outline" onClick={excluir} title="Excluir agenda"><Trash2 className="w-4 h-4" /></Button>}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* ---------- Status da controladora ---------- */
+function SyncCell({ f }) {
+  if (f.sync === "ok") return <span className="text-emerald-400 flex items-center gap-1"><CheckCircle2 className="w-4 h-4" /> sincronizada</span>;
+  if (!f.online) return <span className="text-amber-300 flex items-center gap-1"><WifiOff className="w-4 h-4" /> pendente (offline)</span>;
+  if (f.sync === "pendente") return <span className="text-sky-300">enviando…</span>;
+  return <span className="text-amber-300 flex items-center gap-1"><AlertTriangle className="w-4 h-4" /> não enviada</span>;
+}
+
+const valorModo = (f, padraoId) => (f.modo === "agenda" ? `ag:${f.agenda_id || padraoId}` : f.modo);
+
+function OpcoesAgenda({ agendas }) {
+  return (
+    <>
+      {agendas.map((a) => <SelectItem key={a.id} value={`ag:${a.id}`}>{a.nome}{a.padrao ? " ★" : ""}</SelectItem>)}
+      <SelectSeparator />
+      <SelectItem value="individual">Individual</SelectItem>
+      <SelectItem value="nenhuma">Sem agenda (manual)</SelectItem>
+    </>
+  );
+}
+
+/* ---------- Fancoils ---------- */
+function FancoilsCard({ fancoils, agendas, canEdit }) {
+  const qc = useQueryClient();
+  const [q, setQ] = useState("");
+  const [sel, setSel] = useState(new Set());
+  const [bulk, setBulk] = useState("");
+  const [editInd, setEditInd] = useState(null);
+  const padraoId = agendas.find((a) => a.padrao)?.id;
+  const lista = useMemo(() => fancoils.filter((f) => !q || `${f.name} ${f.floor}`.toLowerCase().includes(q.toLowerCase())), [fancoils, q]);
+  const pend = fancoils.filter((f) => f.sync !== "ok" && f.online);
+  const refresh = () => { qc.invalidateQueries({ queryKey: ["prog-fancoils"] }); qc.invalidateQueries({ queryKey: ["agendas"] }); };
+
+  const aplicar = async (ids, v, periodos) => {
+    const body = { fancoil_ids: ids, modo: v.startsWith("ag:") ? "agenda" : v };
+    if (v.startsWith("ag:")) body.agenda_id = v.slice(3);
+    if (periodos) body.periodos = periodos;
+    try {
+      const r = await api.put("/programacao/fancoils", body);
+      toast.success(`Programação enviada para ${r.data.atualizados} fancoil(s)`);
+      refresh();
+      return true;
+    } catch (e) { toast.error(formatApiError(e)); return false; }
+  };
+  const publicarPendentes = async () => {
+    try { const r = await api.post("/programacao/publicar", { fancoil_ids: pend.map((f) => f.id) }); toast.success(`${r.data.publicados} fancoil(s) reenviados`); refresh(); }
+    catch (e) { toast.error(formatApiError(e)); }
+  };
+  const toggle = (id) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const allSel = lista.length > 0 && lista.every((f) => sel.has(f.id));
+
+  return (
+    <Card className="p-0 overflow-hidden" data-testid="prog-fancoils-card">
+      <div className="p-4 flex flex-wrap items-center gap-2 border-b border-border">
+        <h2 className="font-display text-sm uppercase tracking-widest mr-2">Fancoils</h2>
+        <Input className="max-w-[220px] h-9" placeholder="Buscar (ex.: CJ171, 17)" value={q} onChange={(e) => setQ(e.target.value)} data-testid="prog-busca" />
+        {canEdit && sel.size > 0 && (
+          <div className="flex flex-wrap items-center gap-2 ml-auto" data-testid="prog-bulk">
+            <span className="text-xs text-muted-foreground">{sel.size} selecionado(s) →</span>
+            <Select value={bulk} onValueChange={setBulk}>
+              <SelectTrigger className="h-9 w-[220px]"><SelectValue placeholder="Escolha a programação…" /></SelectTrigger>
+              <SelectContent><OpcoesAgenda agendas={agendas} /></SelectContent>
+            </Select>
+            <Button size="sm" disabled={!bulk} onClick={async () => { if (await aplicar([...sel], bulk)) { setSel(new Set()); setBulk(""); } }} data-testid="prog-bulk-aplicar">Aplicar</Button>
+          </div>
+        )}
+        {canEdit && !sel.size && pend.length > 0 && (
+          <Button size="sm" variant="outline" className="ml-auto" onClick={publicarPendentes} data-testid="prog-publicar">
+            <Send className="w-4 h-4 mr-1" /> Enviar não sincronizadas ({pend.length})
+          </Button>
+        )}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/40 text-left text-xs">
+            <tr>
+              {canEdit && <th className="p-2 w-8"><Checkbox checked={allSel} onCheckedChange={() => setSel(allSel ? new Set() : new Set(lista.map((f) => f.id)))} /></th>}
+              <th className="p-2">Fancoil</th><th className="p-2">Programação</th><th className="p-2">Hoje</th><th className="p-2">Controladora</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lista.map((f) => (
+              <tr key={f.id} className="border-t border-border/60" data-testid={`prog-row-${f.name}`}>
+                {canEdit && <td className="p-2"><Checkbox checked={sel.has(f.id)} onCheckedChange={() => toggle(f.id)} /></td>}
+                <td className="p-2 whitespace-nowrap">
+                  <b>{f.name}</b> <span className="text-xs text-muted-foreground font-mono">{f.floor}º · L{f.side}</span>
+                </td>
+                <td className="p-2">
+                  <div className="flex items-center gap-1">
+                    <Select value={valorModo(f, padraoId)} disabled={!canEdit} onValueChange={(v) => aplicar([f.id], v)}>
+                      <SelectTrigger className="h-8 w-[210px]" data-testid={`prog-modo-${f.name}`}><SelectValue /></SelectTrigger>
+                      <SelectContent><OpcoesAgenda agendas={agendas} /></SelectContent>
+                    </Select>
+                    {f.modo === "individual" && canEdit && (
+                      <Button size="sm" variant="ghost" onClick={() => setEditInd(f)} data-testid={`prog-editar-${f.name}`}><Pencil className="w-4 h-4 mr-1" />editar</Button>
+                    )}
+                  </div>
+                </td>
+                <td className="p-2 font-mono text-xs whitespace-nowrap">{f.hoje || <span className="text-muted-foreground">manual</span>}</td>
+                <td className="p-2 text-xs whitespace-nowrap"><SyncCell f={f} /></td>
+              </tr>
+            ))}
+            {!lista.length && <tr><td colSpan={5} className="p-6 text-center text-muted-foreground">Nenhum fancoil.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <IndividualDialog f={editInd} onClose={() => setEditInd(null)} onSave={async (ps) => { if (await aplicar([editInd.id], "individual", ps)) setEditInd(null); }} />
+    </Card>
+  );
+}
+
+function IndividualDialog({ f, onClose, onSave }) {
+  const [ps, setPs] = useState([]);
+  useEffect(() => { if (f) setPs(f.periodos?.length ? f.periodos : [novoPeriodo()]); }, [f]);
+  const prev = usePreview(ps);
+  return (
+    <Dialog open={!!f} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>Programação individual — {f?.name}</DialogTitle></DialogHeader>
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_240px] gap-4">
+          <PeriodsEditor value={ps} onChange={setPs} />
+          <div className="space-y-2"><WeekTimeline periodos={ps} /><PreviewBadge prev={prev} /></div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button onClick={() => onSave(ps)} disabled={prev && !prev.ok} data-testid="individual-salvar"><Save className="w-4 h-4 mr-1" />Salvar e enviar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export default function ProgramacaoHoraria() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const canEdit = user?.role !== "viewer";
+  const { data: agendas = [] } = useQuery({ queryKey: ["agendas"], queryFn: async () => (await api.get("/agendas")).data });
+  const { data: fancoils = [] } = useQuery({ queryKey: ["prog-fancoils"], queryFn: async () => (await api.get("/programacao/fancoils")).data, refetchInterval: 10000 });
+  return (
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6" data-testid="programacao-page">
+      <div>
+        <h1 className="font-display text-2xl lg:text-3xl font-black tracking-tight uppercase flex items-center gap-3">
+          <Clock className="w-7 h-7 text-sky-400" /> Programação horária
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1 max-w-4xl">
+          Crie agendas com períodos de funcionamento e escolha qual cada fancoil segue. A controladora executa sozinha, mesmo sem internet.
+          Para controle 100% manual, use “Sem agenda” e ligue/desligue em modo Forçado.
+        </p>
+      </div>
+      <AgendasCard agendas={agendas} isAdmin={isAdmin} />
+      <FancoilsCard fancoils={fancoils} agendas={agendas} canEdit={canEdit} />
     </div>
   );
 }

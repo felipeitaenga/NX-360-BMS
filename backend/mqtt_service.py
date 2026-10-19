@@ -733,36 +733,14 @@ class MQTTService:
         return {"id": str(res.inserted_id), "topic": topic, "value": value}
 
     async def publish_schedule_config(self, device_id: str) -> dict:
-        """Publica a lista de agendamentos ativos do fancoil no tópico SCHEDULE/SET
-        (retained). Payload = texto puro, uma linha por agendamento no formato
-        'IDX;HH:MM;DIAS;ACAO;VALOR;EN'. Payload vazio = apagar.
+        """Publica em SCHEDULE/SET (retained) os eventos gerados pela agenda do fancoil
+        (agendas.py). Payload = texto, uma linha por evento 'IDX;HH:MM;DIAS;ACAO;VALOR;EN';
+        vazio = sem agenda (apaga na controladora).
         """
-        action_map = {"estado": "ESTADO", "cmd": "CMD", "setpoint": "SETPOINT"}
+        from agendas import payload_do_fancoil
         fc = await db.fancoils.find_one({"device_id": device_id})
-        lines = []
-        if fc:
-            cursor = db.schedules.find({"fancoil_id": str(fc["_id"])}).sort(
-                [("hour", 1), ("minute", 1)]
-            )
-            idx = 0
-            async for s in cursor:
-                if not s.get("enabled", True):
-                    continue
-                days = s.get("days") or []
-                days_str = ",".join(str(d) for d in sorted(days)) if days else "*"
-                action = action_map.get(s.get("action", ""), str(s.get("action", "")).upper())
-                raw_val = str(s.get("value", "")).strip()
-                if s.get("action") in ("estado", "cmd"):
-                    val = raw_val.lower()
-                    if val not in ("true", "false"):
-                        val = "true" if val in ("1", "on", "yes") else "false"
-                else:
-                    val = raw_val
-                hh = int(s.get("hour", 0))
-                mm = int(s.get("minute", 0))
-                lines.append(f"{idx};{hh:02d}:{mm:02d};{days_str};{action};{val};1")
-                idx += 1
-        payload = "\n".join(lines)
+        payload, n = await payload_do_fancoil(fc) if fc else ("", 0)
+        lines = payload.splitlines()
         topic = f"{self.topic_prefix}/{device_id}/SCHEDULE/SET"
         # Rastrear o payload enviado para confronto com SCHEDULE/STATE (retained)
         st = self.get_state(device_id)
