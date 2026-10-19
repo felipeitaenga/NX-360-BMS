@@ -122,6 +122,11 @@ Firmware pronto (não mexer). Backend/UI alinhados ao protocolo:
 - Versões com radio "Enviar esta" (padrão mais recente); "Versão a enviar: vX (mais recente|anterior)"; botões "Atualizar selecionadas" e "Atualizar todas para vX (N)"; checkbox desabilitado se já na versão; confirmação com aviso de downgrade (exige marcar) e "sem assinatura" (`firmware/OtaWarnings.jsx`). FirmwareUpdateDialog recebe `targets` e pré-seleciona a mais recente.
 - command_log do OTA: firmware_id, versao_origem, versao_destino.
 
+## Novidades (2026-10-19 — v1.11.0 PID no modal Editar fancoil)
+- Contrato MQTT do PID (FC300 ≥ 1.4.4, JSON): `PID/SET` (retain=false; `{"perfil":X}` ou PERSONALIZADO com kp/ti/taxa/zm), `PID/CONFIG` (retido; confirmação; campo `erro` só em erro), `PID/STATE` (retido, a cada 30 s: sp, temp, bruta, erro, pid, vag, zm, rele), `SETPOINT/STATE` (texto "18.0"). Perfis: MUITO_LENTO 30/720/5/0.20 · LENTO 35/480/7/0.20 · NORMAL 40/300/10/0.20 · RAPIDO 50/200/15/0.15 · MUITO_RAPIDO 60/120/20/0.15. Faixas: kp 5–100, ti 60–3600, taxa 1–20, zm 0.10–1.00.
+- `backend/pid.py`: POST `/api/devices/{fancoil_id|device_id}/pid` (admin; valida faixas, salva `pid_desejado`, publica PID/SET, command_log); auto-reenvio quando ONLINE 0→1 ou PID/CONFIG ≠ desejado (máx. 1×/5 min, não reenvia se CONFIG tem erro ou firmware sem suporte). FancoilState: pid_config, pid_state, setpoint_state (+ _at), persistidos; histórico grava `pid` (média por intervalo).
+- Frontend: `PidSection.jsx` no modal (padrão NORMAL), `usePidWatcher` (toasts de confirmação/erro/timeout 60 s), `PidRealtimePanel.jsx` no detalhe, série "Saída PID (%)" no gráfico VAG, selo "PID: <perfil>" na lista.
+
 ## Backlog
 - P1: Mapear MODO/STATUS fora do prefixo também (atualmente CJ031 só tem TEMPERATURA e VAG mapeados — faltam outros tópicos se o firmware publicar)
 - P1: dashboards por sistema (HVAC/ilum/hidráulica) e indicadores agregados por andar

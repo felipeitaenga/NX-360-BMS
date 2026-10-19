@@ -1,6 +1,6 @@
 {
-  "version": "1.10.0",
-  "build_date": "2026-10-18",
-  "codename": "Escolha de Versão",
-  "notes": "Firmware: coluna só por modelo (com desatualizadas e busca), escolha explícita da versão a enviar, avisos de downgrade e versão sem assinatura, origem/destino no histórico."
+  "version": "1.11.0",
+  "build_date": "2026-10-19",
+  "codename": "PID",
+  "notes": "Velocidade do controle (PID) no modal Editar fancoil com confirmação via PID/CONFIG, painel Controle em tempo real (PID/STATE), série Saída PID no histórico e selo de perfil na lista."
 }

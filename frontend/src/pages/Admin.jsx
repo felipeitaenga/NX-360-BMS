@@ -405,10 +405,10 @@ function EditFancoilDialog({ fancoil, onClose, onSaved, onPidSent }) {
       payload.device_id = newDid;
     }
     try {
-      await api.patch(`/fancoils/${fancoil.id}`, payload);
       const pidChanged = user?.role === "admin" && live?.pid_config && !pidEqual(pid, pid0);
+      if (pidChanged && !pidValid(pid)) { toast.error("PID: algum valor está fora da faixa"); return; }
+      await api.patch(`/fancoils/${fancoil.id}`, payload);
       if (pidChanged) {
-        if (!pidValid(pid)) { toast.error("PID: algum valor está fora da faixa"); return; }
         const sentAt = Date.now();
         await api.post(`/devices/${fancoil.id}/pid`, pid);
         toast("Fancoil salvo. Aguardando confirmação do PID…");
