@@ -3,7 +3,7 @@ import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Wind, Lightbulb, Droplets, FileText, Siren, Settings,
   LogOut, Sun, Moon, Menu, X, Thermometer, Volume2, VolumeX, ChevronDown, ChevronRight,
-  KeyRound, Snowflake, Clock,
+  KeyRound, Snowflake, Clock, Users, Cpu, Radio, Wrench, Activity, SlidersHorizontal, Database,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
@@ -32,7 +32,31 @@ const ITEMS = [
   { id: "hydraulics", label: "Hidráulica", icon: Droplets, path: "/hidraulica", module: "hidraulica" },
   { id: "reports", label: "Relatórios", icon: FileText, path: "/relatorios", module: "relatorios" },
   { id: "alarms", label: "Alarmes", icon: Siren, path: "/alarmes", module: "alarmes" },
-  { id: "admin", label: "Configurações", icon: Settings, path: "/admin", module: "admin", adminOnly: true },
+  // ── Configurações (só administrador) ──
+  { id: "cfg-section", section: "Configurações", icon: Settings, adminOnly: true },
+  { id: "cfg-users", label: "Usuários", icon: Users, path: "/config/usuarios", adminOnly: true },
+  {
+    id: "cfg-equip", label: "Equipamentos", icon: Cpu, adminOnly: true,
+    children: [
+      { id: "cfg-fancoils", label: "Fancoils", icon: Wind, path: "/config/fancoils" },
+      { id: "cfg-lighting", label: "Controladoras de iluminação", icon: Lightbulb, path: "/config/iluminacao" },
+      { id: "cfg-firmware", label: "Firmware", icon: Cpu, path: "/config/firmware" },
+    ],
+  },
+  {
+    id: "cfg-com", label: "Comunicação", icon: Radio, adminOnly: true,
+    children: [
+      { id: "cfg-broker", label: "Broker MQTT", icon: Radio, path: "/config/broker" },
+      { id: "cfg-diag", label: "Diagnóstico MQTT", icon: Activity, path: "/config/diagnostico" },
+    ],
+  },
+  {
+    id: "cfg-sys", label: "Sistema", icon: Wrench, adminOnly: true,
+    children: [
+      { id: "cfg-params", label: "Parâmetros", icon: SlidersHorizontal, path: "/config/parametros" },
+      { id: "cfg-backup", label: "Backup", icon: Database, path: "/config/backup" },
+    ],
+  },
 ];
 
 function moduleAllowed(user, perms, item) {
@@ -82,6 +106,13 @@ export default function AppShell({ children }) {
     <nav className="flex-1 flex flex-col gap-1 px-3 py-4 overflow-y-auto">
       {items.map((item) => {
         const Icon = item.icon;
+        if (item.section) {
+          return (
+            <div key={item.id} className="mt-4 mb-1 px-3 pt-3 border-t border-slate-700/60 text-[10px] font-mono uppercase tracking-widest text-slate-500 flex items-center gap-2" data-testid="nav-config-section">
+              <Icon className="w-3.5 h-3.5" /> {item.section}
+            </div>
+          );
+        }
         if (item.children) {
           const anyActive = isChildActive(item.children);
           const expanded = !!expandedKeys[item.id] || anyActive;

@@ -6,16 +6,14 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Checkbox } from "./ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "./ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { toast } from "sonner";
-import { Upload, Trash2, Cpu, AlertTriangle, Square, Copy, HelpCircle, PackageX, Plus, Search } from "lucide-react";
+import { Upload, Trash2, Cpu, AlertTriangle, Square, Copy, HelpCircle, Search } from "lucide-react";
 import { rssiColor, fmtUptime, fmtDate, inspectFirmwareFile, otaLabel, otaStyle, CAT_LABEL } from "./firmware/fwUtils";
 import { FirmwareUpdateDialog } from "./firmware/FirmwareUpdateDialog";
-import { ModelFormDialog } from "./firmware/ControllerModels";
 import { OtaWarnings, downgrades } from "./firmware/OtaWarnings";
 
 export { rssiColor, fmtUptime };
@@ -26,7 +24,7 @@ function useInvalidateAll() {
 }
 
 // ---------- Upload com pré-visualização da assinatura ----------
-function UploadCard({ models, onNewModel }) {
+function UploadCard({ models }) {
   const refresh = useInvalidateAll();
   const [file, setFile] = useState(null);
   const [info, setInfo] = useState(null);
@@ -41,12 +39,11 @@ function UploadCard({ models, onNewModel }) {
     else setResetKey((k) => k + 1);
   };
   const sig = info?.assinatura;
-  const catalogado = sig ? models.find((m) => m.modelo === sig.modelo) : null;
   const submit = async () => {
     const fd = new FormData();
     fd.append("file", file);
     fd.append("versao", sig ? "" : versao.trim());
-    fd.append("modelo", sig ? "" : modelo);
+    fd.append("modelo", sig ? "" : modelo.trim().toUpperCase());
     fd.append("notas", notas);
     setBusy(true);
     try {
@@ -55,9 +52,7 @@ function UploadCard({ models, onNewModel }) {
       pick(null); setNotas("");
       refresh();
     } catch (e) {
-      const d = e?.response?.data?.detail;
       toast.error(formatApiError(e));
-      if (d?.code === "modelo_nao_catalogado") onNewModel({ modelo: d.modelo, categoria: sig?.tipo || "FANCOIL" });
     }
     setBusy(false);
   };
@@ -71,7 +66,7 @@ function UploadCard({ models, onNewModel }) {
             {!info ? <span className="text-muted-foreground">Selecione um arquivo…</span> : (
               <>
                 <span className="text-emerald-400 font-bold">{sig.tipo} · {sig.modelo} · v{sig.versao}</span>
-                {!catalogado && <div className="text-xs text-amber-300 mt-1">Modelo {sig.modelo} não está no catálogo. <button className="underline" onClick={() => onNewModel({ modelo: sig.modelo, categoria: sig.tipo })} data-testid="fw-upload-new-model">cadastrar</button></div>}
+                {!models.find((m) => m.modelo === sig.modelo) && <div className="text-xs text-sky-300 mt-1">Modelo novo — será criado automaticamente.</div>}
               </>
             )}
           </div>
@@ -79,10 +74,8 @@ function UploadCard({ models, onNewModel }) {
           <>
             <div>
               <Label>Modelo (sem assinatura)</Label>
-              <Select value={modelo} onValueChange={setModelo}>
-                <SelectTrigger data-testid="fw-model-select"><SelectValue placeholder="Modelo…" /></SelectTrigger>
-                <SelectContent>{models.map((m) => <SelectItem key={m.modelo} value={m.modelo}>{m.modelo}</SelectItem>)}</SelectContent>
-              </Select>
+              <Input list="fw-model-list" value={modelo} onChange={(e) => setModelo(e.target.value)} placeholder="FC300" data-testid="fw-model-select" />
+              <datalist id="fw-model-list">{models.map((m) => <option key={m.modelo} value={m.modelo} />)}</datalist>
             </div>
             <div><Label>Versão (X.Y.Z)</Label><Input value={versao} onChange={(e) => setVersao(e.target.value)} placeholder="1.4.1" data-testid="fw-version-input" /></div>
           </>
@@ -110,7 +103,7 @@ function ModelList({ tree, sel, setSel }) {
   const [q, setQ] = useState("");
   if (!tree) return null;
   const modelos = tree.modelos.filter((m) => !q || `${m.modelo} ${m.nome}`.toLowerCase().includes(q.toLowerCase()));
-  const extras = tree.sem_modelo > 0 || tree.nao_catalogados.length > 0;
+  const extras = tree.sem_modelo > 0;
   return (
     <Card className="p-3 space-y-1 h-fit" data-testid="fw-tree">
       {tree.modelos.length > 6 && (
@@ -138,12 +131,6 @@ function ModelList({ tree, sel, setSel }) {
             <ListItem active={sel.grupo === "sem_modelo"} onClick={() => setSel({ grupo: "sem_modelo" })} testid="fw-tree-sem-modelo">
               <div className="flex items-center gap-1 font-bold"><HelpCircle className="w-3 h-3" /> Modelo não informado</div>
               <div className="text-muted-foreground">{tree.sem_modelo} controladora(s)</div>
-            </ListItem>
-          )}
-          {tree.nao_catalogados.length > 0 && (
-            <ListItem active={sel.grupo === "nao_catalogado"} onClick={() => setSel({ grupo: "nao_catalogado" })} testid="fw-tree-nao-catalogado">
-              <div className="flex items-center gap-1 font-bold"><PackageX className="w-3 h-3" /> Modelos não catalogados</div>
-              <div className="text-muted-foreground">{tree.nao_catalogados.map((n) => n.modelo).join(", ")}</div>
             </ListItem>
           )}
         </div>
@@ -389,7 +376,7 @@ function ModelPanel({ modelo, tree, batch }) {
   );
 }
 
-function GroupPanel({ grupo, tree, batch, onNewModel }) {
+function GroupPanel({ grupo, batch }) {
   const refresh = useInvalidateAll();
   const [picked, setPicked] = useState(new Set());
   const { data: ctrls = [] } = useQuery({ queryKey: ["fw-ctrls", { grupo }], queryFn: async () => (await api.get("/admin/firmware/controladoras", { params: { grupo } })).data, refetchInterval: 3000 });
@@ -397,17 +384,10 @@ function GroupPanel({ grupo, tree, batch, onNewModel }) {
   const targets = ctrls.filter((c) => picked.has(c.device_id));
   return (
     <div className="space-y-4">
-      {grupo === "nao_catalogado" && tree?.nao_catalogados.map((n) => (
-        <Card key={n.modelo} className="p-3 flex items-center gap-3 text-sm border-amber-500/30" data-testid={`fw-uncat-${n.modelo}`}>
-          <PackageX className="w-4 h-4 text-amber-400" />
-          <span className="font-mono font-bold">{n.modelo}</span><span className="text-muted-foreground">{n.n_controladoras} controladora(s) · {CAT_LABEL[n.categoria]}</span>
-          <Button size="sm" className="ml-auto gap-1" onClick={() => onNewModel({ modelo: n.modelo, categoria: n.categoria })} data-testid={`fw-uncat-register-${n.modelo}`}><Plus className="w-3 h-3" /> cadastrar</Button>
-        </Card>
-      ))}
       <Card className="p-0 overflow-hidden">
         <div className="p-3 border-b border-border flex flex-wrap items-center gap-2">
           <div className="font-display text-sm uppercase tracking-widest flex items-center gap-2 mr-auto">
-            <Cpu className="w-4 h-4 text-sky-400" /> {grupo === "sem_modelo" ? "Modelo não informado" : "Modelos não catalogados"} — controladoras ({ctrls.length})
+            <Cpu className="w-4 h-4 text-sky-400" /> Modelo não informado — controladoras ({ctrls.length})
           </div>
           {grupo === "sem_modelo" && (
             <FirmwareUpdateDialog targets={targets} modelo={null} label={`Atualizar selecionadas (${picked.size})`} onSent={() => { setPicked(new Set()); refresh(); }} testid="fw-update-selected-btn" />
@@ -422,9 +402,7 @@ function GroupPanel({ grupo, tree, batch, onNewModel }) {
 export function FirmwareTab() {
   const qc = useQueryClient();
   const [sel, setSel] = useState(null);
-  const [modelDlg, setModelDlg] = useState({ open: false, initial: null });
   const { data: tree } = useQuery({ queryKey: ["fw-tree"], queryFn: async () => (await api.get("/admin/firmware/arvore")).data, refetchInterval: 10000 });
-  const { data: models = [] } = useQuery({ queryKey: ["controller-models"], queryFn: async () => (await api.get("/admin/controller-models")).data });
   const { data: batch } = useQuery({ queryKey: ["fw-batch"], queryFn: async () => (await api.get("/admin/firmware/lote")).data, refetchInterval: 2000 });
   const { data: cfg } = useQuery({ queryKey: ["fw-config"], queryFn: async () => (await api.get("/admin/firmware/config")).data });
   const effectiveSel = useMemo(() => {
@@ -434,21 +412,18 @@ export function FirmwareTab() {
     return {};
   }, [sel, tree]);
   const cancel = async () => { await api.post("/admin/firmware/lote/cancelar"); qc.invalidateQueries({ queryKey: ["fw-batch"] }); };
-  const newModel = (initial) => setModelDlg({ open: true, initial });
   return (
     <div className="space-y-4" data-testid="firmware-tab">
       <div className="text-xs font-mono text-muted-foreground" data-testid="fw-base-url">
         Endereço dos arquivos: <span className="text-sky-300">{cfg?.base_url || "…"}</span>
-        {cfg && !cfg.personalizado && <span className="ml-2 text-amber-300">(padrão — defina FIRMWARE_PUBLIC_BASE para usar outro endereço)</span>}
       </div>
-      <UploadCard models={models} onNewModel={newModel} />
+      <UploadCard models={tree?.modelos || []} />
       <BatchBanner batch={batch} onCancel={cancel} />
       <div className="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-4">
         <ModelList tree={tree} sel={effectiveSel} setSel={setSel} />
         {effectiveSel.modelo && <ModelPanel key={effectiveSel.modelo} modelo={effectiveSel.modelo} tree={tree} batch={batch} />}
-        {effectiveSel.grupo && <GroupPanel key={effectiveSel.grupo} grupo={effectiveSel.grupo} tree={tree} batch={batch} onNewModel={newModel} />}
+        {effectiveSel.grupo && <GroupPanel key={effectiveSel.grupo} grupo={effectiveSel.grupo} batch={batch} />}
       </div>
-      <ModelFormDialog open={modelDlg.open} onOpenChange={(o) => setModelDlg((p) => ({ ...p, open: o }))} initial={modelDlg.initial} editing={false} />
     </div>
   );
 }

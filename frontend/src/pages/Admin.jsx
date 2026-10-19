@@ -6,14 +6,13 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Switch } from "../components/ui/switch";
-import { Tabs, TabsContent } from "../components/ui/tabs";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "../components/ui/select";
+import { Navigate, useParams } from "react-router-dom";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "../components/ui/dialog";
 import { Checkbox } from "../components/ui/checkbox";
 import { toast } from "sonner";
-import { UserPlus, Trash2, KeyRound, Upload, RefreshCw, Settings as SettingsIcon, Pencil, Radio, Activity, Link2, ArrowDownToLine, Plus, Download, Database, AlertTriangle } from "lucide-react";
+import { UserPlus, Trash2, KeyRound, Upload, RefreshCw, Users, Wind, Cpu, SlidersHorizontal, Pencil, Radio, Activity, Link2, ArrowDownToLine, Plus, Download, Database, AlertTriangle } from "lucide-react";
 import { FirmwareTab, rssiColor, fmtUptime } from "../components/FirmwareTab";
-import { ControllerModelsTab } from "../components/firmware/ControllerModels";
 import { useTelemetry } from "../context/TelemetryContext";
 import { useAuth } from "../context/AuthContext";
 import { PidSection, initialPid, pidEqual, pidMatches, pidValid } from "../components/PidSection";
@@ -496,7 +495,7 @@ function EditFancoilDialog({ fancoil, onClose, onSaved, onPidSent }) {
   );
 }
 
-function SettingsTab() {
+function SettingsTab({ section = "broker" }) {
   const qc = useQueryClient();
   const { data: s } = useQuery({ queryKey: ["settings"], queryFn: async () => (await api.get("/admin/settings")).data });
   const [form, setForm] = useState({});
@@ -529,8 +528,10 @@ function SettingsTab() {
   const upd = (k, v) => setForm((p) => ({ ...p, [k]: v }));
   const updBroker = (k, v) => setForm((p) => ({ ...p, broker: { ...p.broker, [k]: v } }));
 
+  const isBroker = section === "broker";
   return (
     <div className="space-y-6">
+      {isBroker && (<>
       <Card className="p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-display text-sm uppercase tracking-widest">Broker MQTT</h3>
@@ -617,6 +618,9 @@ function SettingsTab() {
           <div className="text-xs text-muted-foreground">Fancoils virtuais publicam dados fictícios e respondem a comandos.</div></div>
         </label>
       </Card>
+      </>)}
+
+      {!isBroker && (<>
 
       <Card className="p-4">
         <h3 className="font-display text-sm uppercase tracking-widest mb-3">Parâmetros</h3>
@@ -637,71 +641,9 @@ function SettingsTab() {
           <div><Label>URL logo</Label><Input value={form.logo_url || ""} onChange={(e) => upd("logo_url", e.target.value)} /></div>
         </div>
       </Card>
+      </>)}
 
-      <Button onClick={save} data-testid="save-settings-button"><RefreshCw className="w-4 h-4 mr-2" />Salvar e reconectar</Button>
-    </div>
-  );
-}
-
-const MENU = [
-  { group: "Usuários", items: [{ v: "users", l: "Usuários" }] },
-  { group: "Equipamentos", items: [{ v: "fancoils", l: "Fancoils" }, { v: "models", l: "Modelos de controladora" }, { v: "firmware", l: "Firmware das controladoras" }] },
-  { group: "Comunicação", items: [{ v: "settings", l: "Broker e Parâmetros" }, { v: "diag", l: "Diagnóstico MQTT" }] },
-  { group: "Sistema", items: [{ v: "backup", l: "Backup" }] },
-];
-
-function AdminNav({ tab, setTab }) {
-  return (
-    <>
-      <div className="lg:hidden">
-        <Select value={tab} onValueChange={setTab}>
-          <SelectTrigger data-testid="admin-menu-select"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {MENU.map((g) => (
-              <SelectGroup key={g.group}>
-                <SelectLabel className="text-[10px] uppercase tracking-widest text-muted-foreground">{g.group}</SelectLabel>
-                {g.items.map((i) => <SelectItem key={i.v} value={i.v} data-testid={`admin-menu-option-${i.v}`}>{i.l}</SelectItem>)}
-              </SelectGroup>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <nav className="hidden lg:block space-y-5" data-testid="admin-menu">
-        {MENU.map((g) => (
-          <div key={g.group}>
-            <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground mb-1 px-3">{g.group}</div>
-            {g.items.map((i) => (
-              <button key={i.v} onClick={() => setTab(i.v)} data-testid={`admin-tab-${i.v}`}
-                className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors border-l-2 ${tab === i.v ? "bg-sky-500/10 text-sky-300 border-sky-400" : "border-transparent hover:bg-muted/40 text-foreground/80"}`}>
-                {i.l}
-              </button>
-            ))}
-          </div>
-        ))}
-      </nav>
-    </>
-  );
-}
-
-export default function Admin() {
-  const [tab, setTab] = useState("users");
-  return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6" data-testid="admin-page">
-      <h1 className="font-display text-3xl lg:text-4xl font-black tracking-tight uppercase flex items-center gap-3">
-        <SettingsIcon className="w-8 h-8 text-sky-400" /> Configurações
-      </h1>
-      <Tabs value={tab} onValueChange={setTab} className="grid grid-cols-1 lg:grid-cols-[230px_minmax(0,1fr)] gap-6 items-start">
-        <AdminNav tab={tab} setTab={setTab} />
-        <div className="min-w-0">
-        <TabsContent value="users" className="mt-0"><UsersTab /></TabsContent>
-        <TabsContent value="fancoils" className="mt-0"><FancoilsTab /></TabsContent>
-        <TabsContent value="settings" className="mt-0"><SettingsTab /></TabsContent>
-        <TabsContent value="diag" className="mt-0"><MqttDiagTab /></TabsContent>
-        <TabsContent value="firmware" className="mt-0"><FirmwareTab /></TabsContent>
-        <TabsContent value="models" className="mt-0"><ControllerModelsTab /></TabsContent>
-        <TabsContent value="backup" className="mt-0"><BackupTab /></TabsContent>
-        </div>
-      </Tabs>
+      <Button onClick={save} data-testid="save-settings-button"><RefreshCw className="w-4 h-4 mr-2" />{isBroker ? "Salvar e reconectar" : "Salvar"}</Button>
     </div>
   );
 }
@@ -1097,6 +1039,32 @@ function MqttDiagTab() {
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// Cada tela de Configurações tem rota própria (/config/<secao>); o menu fica no AppShell.
+export const CONFIG_PAGES = {
+  usuarios: { title: "Usuários", icon: Users, render: () => <UsersTab /> },
+  fancoils: { title: "Fancoils", icon: Wind, render: () => <FancoilsTab /> },
+  firmware: { title: "Firmware das controladoras", icon: Cpu, render: () => <FirmwareTab /> },
+  broker: { title: "Broker MQTT", icon: Radio, render: () => <SettingsTab section="broker" /> },
+  diagnostico: { title: "Diagnóstico MQTT", icon: Activity, render: () => <MqttDiagTab /> },
+  parametros: { title: "Parâmetros", icon: SlidersHorizontal, render: () => <SettingsTab section="sistema" /> },
+  backup: { title: "Backup", icon: Database, render: () => <BackupTab /> },
+};
+
+export default function Admin() {
+  const { secao } = useParams();
+  const page = CONFIG_PAGES[secao];
+  if (!page) return <Navigate to="/config/usuarios" replace />;
+  const Icon = page.icon;
+  return (
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6" data-testid={`config-page-${secao}`}>
+      <h1 className="font-display text-2xl lg:text-3xl font-black tracking-tight uppercase flex items-center gap-3">
+        <Icon className="w-7 h-7 text-sky-400" /> {page.title}
+      </h1>
+      {page.render()}
     </div>
   );
 }

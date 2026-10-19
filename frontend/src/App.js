@@ -66,10 +66,13 @@ function App() {
                 <Route path="/alarmes" element={<Protected><Shell><Alarmes /></Shell></Protected>} />
                 <Route path="/relatorios" element={<Protected><Shell><Relatorios /></Shell></Protected>} />
                 <Route path="/iluminacao" element={<Protected><Shell><Iluminacao /></Shell></Protected>} />
-                <Route path="/iluminacao/controladoras" element={<Protected admin><Shell><IluminacaoControladoras /></Shell></Protected>} />
+                <Route path="/iluminacao/controladoras" element={<Navigate to="/config/iluminacao" replace />} />
                 <Route path="/iluminacao/pavimento/:id" element={<Protected><Shell><IluminacaoPavimento /></Shell></Protected>} />
                 <Route path="/hidraulica" element={<Protected><Shell><EmBreve title="Hidráulica" icon={Droplets} /></Shell></Protected>} />
-                <Route path="/admin" element={<Protected admin><Shell><Admin /></Shell></Protected>} />
+                <Route path="/admin" element={<Navigate to="/config/usuarios" replace />} />
+                <Route path="/config/iluminacao" element={<Protected admin><Shell><IluminacaoControladoras /></Shell></Protected>} />
+                <Route path="/config/:secao" element={<Protected admin><Shell><Admin /></Shell></Protected>} />
+                <Route path="/config" element={<Navigate to="/config/usuarios" replace />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </BrowserRouter>

@@ -66,7 +66,7 @@ export default function Iluminacao() {
           {user?.role === "admin" && (
             <>
               <Button variant="outline" asChild data-testid="btn-controladoras">
-                <Link to="/iluminacao/controladoras"><Settings2 className="w-4 h-4 mr-2" />Controladoras</Link>
+                <Link to="/config/iluminacao"><Settings2 className="w-4 h-4 mr-2" />Controladoras</Link>
               </Button>
               <Button onClick={() => setNewPavOpen(true)} data-testid="btn-new-pavimento"><Plus className="w-4 h-4 mr-2" />Novo pavimento</Button>
             </>

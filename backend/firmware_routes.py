@@ -86,6 +86,21 @@ async def _latest_by_model() -> dict:
     return latest
 
 
+async def _categoria_modelo(modelo: str, tipo: Optional[str] = None) -> str:
+    """Categoria sem cadastro: TIPO da assinatura → firmware já enviado → controladoras do modelo → catálogo antigo."""
+    t = (tipo or "").strip().upper()
+    if t in CATEGORIAS:
+        return t
+    fw = await db.firmwares.find_one({"modelo": modelo, "categoria": {"$in": [c for c in CATEGORIAS if c != "OUTRO"]}}, {"categoria": 1})
+    if fw:
+        return fw["categoria"]
+    for c in await inventory():
+        if c["modelo"] == modelo and c["categoria"] != "OUTRO":
+            return c["categoria"]
+    legado = (await catalog_map()).get(modelo)
+    return (legado or {}).get("categoria") or "OUTRO"
+
+
 # ---------------- Upload / lista / download ----------------
 @router.post("/admin/firmware")
 async def upload_firmware(
@@ -112,10 +127,7 @@ async def upload_firmware(
         raise HTTPException(400, "Arquivo sem assinatura NXFW — informe o modelo e a versão")
     if not VERSION_RE.match(versao):
         raise HTTPException(400, "Versão inválida — use o formato X.Y.Z (ex.: 1.4.1)")
-    cat = (await catalog_map()).get(modelo)
-    if not cat:
-        raise HTTPException(400, {"code": "modelo_nao_catalogado", "modelo": modelo,
-                                  "message": f"Modelo {modelo} não está no catálogo — cadastre-o em Modelos de controladora"})
+    categoria = await _categoria_modelo(modelo, sig["tipo"] if sig else None)
     if await db.firmwares.find_one({"modelo": modelo, "versao": versao}):
         raise HTTPException(409, f"{modelo} v{versao} já foi enviado")
     nome = f"{modelo.lower()}-{versao}.bin"
@@ -124,7 +136,7 @@ async def upload_firmware(
     folder.mkdir(parents=True, exist_ok=True)
     (folder / nome).write_bytes(data)
     doc = {
-        "versao": versao, "modelo": modelo, "categoria": cat["categoria"],
+        "versao": versao, "modelo": modelo, "categoria": categoria,
         "tipo": sig["tipo"] if sig else None, "assinatura": bool(sig),
         "nome_arquivo": nome, "nome_original": file.filename, "tamanho": len(data),
         "md5": hashlib.md5(data).hexdigest(), "sha256": hashlib.sha256(data).hexdigest(),
@@ -162,46 +174,40 @@ async def firmware_config(_: dict = Depends(require_admin)):
 
 @router.get("/admin/firmware/arvore")
 async def firmware_tree(_: dict = Depends(require_admin)):
-    catalog = await catalog_map()
+    """Modelos descobertos automaticamente: controladoras que informaram MODELO + arquivos .bin enviados."""
+    legado = await catalog_map()
     inv = await inventory()
-    n_ver: dict = {}
-    async for f in db.firmwares.find({}, {"modelo": 1}):
-        n_ver[f["modelo"]] = n_ver.get(f["modelo"], 0) + 1
     latest = await _latest_by_model()
-    n_ctrl: dict = {}
-    n_out: dict = {}
+    info: dict = {}
+
+    def entry(modelo: str) -> dict:
+        return info.setdefault(modelo, {"modelo": modelo, "categoria": None, "nome": (legado.get(modelo) or {}).get("nome", ""),
+                                        "n_versoes": 0, "n_controladoras": 0, "n_desatualizadas": 0})
+
+    async for f in db.firmwares.find({}, {"modelo": 1, "categoria": 1}):
+        e = entry(f["modelo"])
+        e["n_versoes"] += 1
+        if f.get("categoria") in CATEGORIAS and f["categoria"] != "OUTRO":
+            e["categoria"] = f["categoria"]
     for c in inv:
-        if c["modelo"]:
-            n_ctrl[c["modelo"]] = n_ctrl.get(c["modelo"], 0) + 1
-            lt = latest.get(c["modelo"])
-            if lt and c["versao"] != lt:
-                n_out[c["modelo"]] = n_out.get(c["modelo"], 0) + 1
-    modelos_flat = sorted(
-        [{**m, "categoria_label": CATEGORIA_LABEL.get(m["categoria"], m["categoria"]),
-          "n_versoes": n_ver.get(m["modelo"], 0), "n_controladoras": n_ctrl.get(m["modelo"], 0),
-          "n_desatualizadas": n_out.get(m["modelo"], 0), "versao_mais_recente": latest.get(m["modelo"])}
-         for m in catalog.values() if n_ver.get(m["modelo"]) or n_ctrl.get(m["modelo"])],
-        key=lambda x: x["modelo"],
-    )
-    cats = []
-    for cat in CATEGORIAS:
-        modelos = [
-            {**m, "n_versoes": n_ver.get(m["modelo"], 0), "n_controladoras": n_ctrl.get(m["modelo"], 0),
-             "versao_mais_recente": latest.get(m["modelo"])}
-            for m in sorted(catalog.values(), key=lambda x: x["modelo"]) if m["categoria"] == cat
-        ]
-        if cat != "OUTRO" or modelos:
-            cats.append({"categoria": cat, "label": CATEGORIA_LABEL[cat], "modelos": modelos})
-    nao_cat: dict = {}
-    for c in inv:
-        if c["modelo"] and not c["catalogado"]:
-            e = nao_cat.setdefault(c["modelo"], {"modelo": c["modelo"], "categoria": c["categoria"], "n_controladoras": 0})
-            e["n_controladoras"] += 1
+        if not c["modelo"]:
+            continue
+        e = entry(c["modelo"])
+        e["n_controladoras"] += 1
+        if not e["categoria"] and c["categoria"] != "OUTRO":
+            e["categoria"] = c["categoria"]
+        lt = latest.get(c["modelo"])
+        if lt and c["versao"] != lt:
+            e["n_desatualizadas"] += 1
+    modelos = []
+    for e in sorted(info.values(), key=lambda x: x["modelo"]):
+        cat = e["categoria"] or (legado.get(e["modelo"]) or {}).get("categoria") or "OUTRO"
+        modelos.append({**e, "categoria": cat, "categoria_label": CATEGORIA_LABEL.get(cat, cat),
+                        "versao_mais_recente": latest.get(e["modelo"])})
     return {
-        "modelos": modelos_flat,
-        "categorias": cats,
+        "modelos": modelos,
         "sem_modelo": sum(1 for c in inv if not c["modelo"]),
-        "nao_catalogados": sorted(nao_cat.values(), key=lambda x: x["modelo"]),
+        "nao_catalogados": [],  # compatibilidade: catálogo manual não é mais usado
     }
 
 
@@ -237,8 +243,6 @@ async def list_controllers(categoria: str = "", modelo: str = "", grupo: str = "
         inv = [c for c in inv if c["modelo"] == modelo.upper()]
     elif grupo == "sem_modelo":
         inv = [c for c in inv if not c["modelo"]]
-    elif grupo == "nao_catalogado":
-        inv = [c for c in inv if c["modelo"] and not c["catalogado"]]
     if categoria:
         inv = [c for c in inv if c["categoria"] == categoria.upper()]
     inv.sort(key=lambda c: (c["identificacao"] is None, c["identificacao"] or c["device_id"]))
