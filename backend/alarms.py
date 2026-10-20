@@ -96,6 +96,16 @@ async def run_alarm_engine(svc):
             else:
                 await clear_alarm("__system__", "BROKER_DOWN")
 
+            # Fancoil desativado não gera alarme: encerra os que ficaram abertos
+            inativos = [f["device_id"] async for f in db.fancoils.find({"active": False}, {"device_id": 1})]
+            if inativos:
+                r = await db.alarms.update_many(
+                    {"device_id": {"$in": inativos}, "active": True},
+                    {"$set": {"active": False, "cleared_at": now_iso(), "cleared_reason": "fancoil inativo"}},
+                )
+                if r.modified_count:
+                    await manager.broadcast("alarm_cleared", {"device_id": None, "type": "INATIVO", "count": r.modified_count})
+
             fancoils = await db.fancoils.find({"active": True}).to_list(1000)
             for fc in fancoils:
                 did = fc["device_id"]
