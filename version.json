@@ -1,6 +1,0 @@
-{
-  "version": "1.18.1",
-  "build_date": "2026-10-22",
-  "codename": "AUDITORIA",
-  "notes": "Pacote acumulado: setpoint por chiller (1.16.3), programação horária e sequenciador da CAG (1.17.0), alarmes, relatórios com usuário/auditoria e LGPD (1.18.0). Detalhes em docs/CHANGELOG_1.16.3_a_1.18.0.md."
-}
