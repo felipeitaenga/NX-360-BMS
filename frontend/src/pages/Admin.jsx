@@ -45,7 +45,8 @@ function usePidWatcher() {
 
 const MODULES = [
   { id: "home", label: "Início" },
-  { id: "ar_condicionado", label: "Ar Condicionado" },
+  { id: "ar_condicionado", label: "Ar Condicionado (fancoils)" },
+  { id: "cag", label: "CAG — água gelada" },
   { id: "iluminacao", label: "Iluminação" },
   { id: "hidraulica", label: "Hidráulica" },
   { id: "relatorios", label: "Relatórios" },

@@ -25,7 +25,7 @@ const ITEMS = [
       { id: "fancoils-list", label: "Fancoil", icon: Wind, path: "/ar-condicionado" },
       { id: "heatmap", label: "Mapa de Calor", icon: Thermometer, path: "/mapa-calor" },
       {
-        id: "cag", label: "CAG", icon: Snowflake,
+        id: "cag", label: "CAG", icon: Snowflake, module: "cag",
         children: [
           { id: "cag-sinotico", label: "Sinótico e comandos", icon: LayoutDashboard, path: "/ar-condicionado/cag" },
           { id: "cag-prog", label: "Programação horária", icon: Clock, path: "/ar-condicionado/cag/programacao" },
@@ -152,7 +152,7 @@ export default function AppShell({ children }) {
               </button>
               {expanded && (
                 <div className="ml-3 pl-2 border-l border-slate-700/60 flex flex-col gap-1 mt-1">
-                  {item.children.map((c) => {
+                  {item.children.filter((c) => !c.module || moduleAllowed(user, perms, c)).map((c) => {
                     const CIcon = c.icon;
                     if (c.children) {
                       const subAtivo = isChildActive(c.children);

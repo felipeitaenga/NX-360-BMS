@@ -35,11 +35,11 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from auth import get_current_user, require_admin
+from auth import get_current_user, require_admin, require_module
 from db import db
 
 logger = logging.getLogger("cag")
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/api", dependencies=[Depends(require_module("cag"))])  # não-admin precisa do módulo "cag"
 
 CHILLERS = ["CH1", "CH2"]
 VALVULAS = ["VCH1", "VCH2"]

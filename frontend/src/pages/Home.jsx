@@ -72,10 +72,10 @@ function Kpi({ icon: Icon, label, value, sub, cor, to }) {
 export default function Home() {
   const pode = usePode();
   const { states } = useTelemetry();
-  const ac = pode("ar_condicionado"), hid = pode("hidraulica"), ilu = pode("iluminacao"), alm = pode("alarmes");
+  const ac = pode("ar_condicionado"), cg = pode("cag"), hid = pode("hidraulica"), ilu = pode("iluminacao"), alm = pode("alarmes");
 
   const { data: fancoils = [] } = useQuery({ queryKey: ["fancoils"], queryFn: async () => (await api.get("/fancoils")).data, refetchInterval: 30000, enabled: ac });
-  const { data: cag } = useQuery({ queryKey: ["home-cag"], queryFn: seguro("/cag"), refetchInterval: 10000, enabled: ac });
+  const { data: cag } = useQuery({ queryKey: ["home-cag"], queryFn: seguro("/cag"), refetchInterval: 10000, enabled: cg });
   const { data: hidr } = useQuery({ queryKey: ["home-hid"], queryFn: seguro("/hidraulica"), refetchInterval: 10000, enabled: hid });
   const { data: luz } = useQuery({ queryKey: ["home-luz"], queryFn: seguro("/lighting/overview"), refetchInterval: 15000, enabled: ilu });
   const { data: alarmes = [] } = useQuery({ queryKey: ["active-alarms-home"], queryFn: async () => (await api.get("/alarms?active_only=true")).data, refetchInterval: 15000, enabled: alm });
@@ -134,7 +134,7 @@ export default function Home() {
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
         {alm && <Kpi icon={Siren} label="Alarmes ativos" value={alarmes.length} cor={alarmes.length ? "text-red-400" : "text-emerald-400"} sub={naoRec ? `${naoRec} não reconhecido(s)` : "tudo reconhecido"} to="/alarmes" />}
         {ac && <Kpi icon={Wind} label="Fancoils ligados" value={`${fc.on}/${fc.total}`} cor="text-emerald-400" sub={`${fc.offline} offline · ${fc.forced} em forçado`} to="/ar-condicionado" />}
-        {ac && cag && <Kpi icon={Snowflake} label="CAG" value={g?.central ? "OPERANDO" : "PARADA"} cor={g?.central ? "text-emerald-400" : "text-slate-400"} sub={`${cag.resumo?.chillers ?? 0}/2 chillers · água ${fmt(g?.temp_ida)} °C`} to="/ar-condicionado/cag" />}
+        {cg && cag && <Kpi icon={Snowflake} label="CAG" value={g?.central ? "OPERANDO" : "PARADA"} cor={g?.central ? "text-emerald-400" : "text-slate-400"} sub={`${cag.resumo?.chillers ?? 0}/2 chillers · água ${fmt(g?.temp_ida)} °C`} to="/ar-condicionado/cag" />}
         {hid && hidResumo && <Kpi icon={Droplets} label="Hidráulica" value={hidResumo.some((s) => s.alarme) ? "ATENÇÃO" : "NORMAL"} cor={hidResumo.some((s) => s.alarme) ? "text-red-400" : "text-sky-400"} sub={`${hidResumo.reduce((a, s) => a + s.ligadas, 0)} bomba(s) ligada(s)`} to="/hidraulica" />}
         {ilu && luz && <Kpi icon={Lightbulb} label="Iluminação" value={luz.circuitos_ligados ?? 0} cor="text-yellow-300" sub={`circuitos acesos · ${luz.controladoras_online}/${luz.controladoras_total} controladoras`} to="/iluminacao" />}
       </div>
@@ -161,7 +161,7 @@ export default function Home() {
           </Sistema>
         )}
 
-        {ac && cag && g && (
+        {cg && cag && g && (
           <Sistema testid="home-cag" icon={Snowflake} titulo="CAG — água gelada" sub={`Modo ${g.modo === "AUTO" ? "automático" : "manual"} · líder ${g.lider}${cag.simulacao ? " · simulação" : ""}`} to="/ar-condicionado/cag" cor="#22d3ee"
             status={g.central ? <Badge cor="#22c55e">EM OPERAÇÃO</Badge> : <Badge cor="#94a3b8">PARADA</Badge>}>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

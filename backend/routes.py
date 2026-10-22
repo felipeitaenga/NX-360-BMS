@@ -461,7 +461,7 @@ def _enriquecer_alarme(a: dict, ctx: dict, user: dict) -> Optional[dict]:
             return None
         cat, eq, local, link = "sistema", "Servidor NX-360", "Sistema", "/config/diagnostico"
     elif did.startswith("CAG/"):
-        if mods is not None and "ar_condicionado" not in mods:
+        if mods is not None and "cag" not in mods:
             return None
         tag = did[4:]
         try:
@@ -621,7 +621,7 @@ async def report_commands(days: int = 7, format: str = "json", usuario: str = ""
     async for c in cursor:
         did = c.get("device_id")
         cat = _cmd_categoria(c)
-        if cat == "CAG" and mods is not None and "ar_condicionado" not in mods:
+        if cat == "CAG" and mods is not None and "cag" not in mods:
             continue
         if cat == "Hidráulica" and mods is not None and "hidraulica" not in mods:
             continue

@@ -320,8 +320,11 @@ async def rel_auditoria(days: int = 30, usuario: str = "", categoria: str = "", 
     if categoria:
         filtro["categoria"] = categoria if admin or categoria not in ("Usuários", "Sistema", "Relatórios") else "__nenhuma__"
     mapa = await mapa_usuarios()
+    escopo = None if admin else await _escopo(user)
     rows = []
     async for a in db.audit_log.find(filtro, {"_id": 0}).sort("timestamp", -1).limit(5000):
+        if escopo and not _no_escopo(a, escopo, user):
+            continue
         u = quem(a.get("user_id"), mapa, admin, a.get("nome"), a.get("email"))
         r = {"timestamp": a["timestamp"], "user_id": a.get("user_id"), **u, "perfil": a.get("perfil"),
              "categoria": a.get("categoria"), "acao": a.get("acao"), "alvo": a.get("alvo"),
@@ -344,11 +347,34 @@ async def rel_auditoria(days: int = 30, usuario: str = "", categoria: str = "", 
     return rows
 
 
+async def _escopo(user: dict) -> dict:
+    """O que um não-admin pode ver: módulos e nomes dos fancoils autorizados."""
+    from auth import allowed_modules, allowed_fancoil_ids
+    mods = await allowed_modules(user) or []
+    ids = set(await allowed_fancoil_ids(user) or [])
+    nomes = set()
+    async for f in db.fancoils.find({}, {"name": 1, "device_id": 1}):
+        if str(f["_id"]) in ids:
+            nomes.update({f.get("name"), f.get("device_id")})
+    return {"mods": set(mods), "fancoils": nomes}
+
+
+def _no_escopo(a: dict, esc: dict, user: dict) -> bool:
+    if a.get("user_id") == user.get("id"):
+        return True  # as próprias ações sempre aparecem
+    cat = a.get("categoria")
+    if cat == "Fancoils":
+        return a.get("alvo") in esc["fancoils"]
+    return {"CAG": "cag", "Hidráulica": "hidraulica", "Iluminação": "iluminacao"}.get(cat) in esc["mods"]
+
+
 @router.get("/reports/usuarios")
 async def rel_usuarios(user: dict = Depends(get_current_user)):
     """Lista para o filtro 'Usuário' dos relatórios (só nome para não-admin)."""
     admin = user["role"] == "admin"
     out = []
+    if not admin:  # não-admin não recebe a lista de usuários do sistema
+        return [{"id": user["id"], "nome": user.get("name") or mascarar_email(user.get("email")), "email": None}]
     async for u in db.users.find({}, {"name": 1, "email": 1}).sort("name", 1):
         out.append({"id": str(u["_id"]), "nome": u.get("name") or (u.get("email") if admin else mascarar_email(u.get("email"))),
                     "email": u.get("email") if admin else None})

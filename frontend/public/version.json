@@ -1,6 +1,6 @@
 {
-  "version": "1.18.2",
+  "version": "1.18.3",
   "build_date": "2026-10-22",
-  "codename": "PAINEL",
-  "notes": "Painel geral reformulado: fancoils, CAG, hidráulica, iluminação e alarmes em um só lugar, respeitando a permissão de cada usuário."
+  "codename": "PERMISSOES",
+  "notes": "Permissões: novo módulo CAG (não-admin só vê a CAG se tiver o módulo); hidráulica protegida também na API; usuário restrito (ex.: cj21) vê só os fancoils dele no painel, alarmes e relatórios."
 }

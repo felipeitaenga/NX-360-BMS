@@ -34,11 +34,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from auth import get_current_user, require_admin
+from auth import get_current_user, require_admin, require_module
 from db import db
 
 logger = logging.getLogger("hidraulica")
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/api", dependencies=[Depends(require_module("hidraulica"))])
 
 # controle: reservatório cuja boia 2 comanda as bombas · fonte: reservatório de onde elas tiram
 SISTEMAS = {
