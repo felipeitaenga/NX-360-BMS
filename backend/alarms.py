@@ -19,6 +19,13 @@ ALARM_TYPES = {
     "RESET_CRITICO": {"priority": "alta", "label": "Controladora reiniciou por falha crítica (BOOTLOOP / RELÉ BLOQUEADO)"},
     "WIFI_FRACO": {"priority": "media", "label": "Sinal Wi-Fi fraco (< -80 dBm por mais de 30 min)"},
     "OTA_FALHA": {"priority": "media", "label": "Falha na atualização remota de firmware (OTA)"},
+    "CAG_FALHA": {"priority": "alta", "label": "Falha em equipamento da CAG"},
+    "HID_NIVEL": {"priority": "alta", "label": "Nível crítico em reservatório (hidráulica)"},
+    "HID_NIVEL_BAIXO": {"priority": "alta", "label": "Nível baixo em reservatório (hidráulica)"},
+    "HID_NIVEL_ALTO": {"priority": "alta", "label": "Nível alto em reservatório (hidráulica)"},
+    "HID_BOIA": {"priority": "media", "label": "Falha de boia (combinação impossível)"},
+    "HID_SEM_VAZAO": {"priority": "alta", "label": "Bomba ligada sem efeito no nível (sem vazão)"},
+    "HID_FALHA": {"priority": "alta", "label": "Falha em bomba da hidráulica"},
 }
 
 RSSI_WEAK_DBM = -80

@@ -16,14 +16,14 @@ import FancoilDetail from "./pages/FancoilDetail";
 import Alarmes from "./pages/Alarmes";
 import Relatorios from "./pages/Relatorios";
 import Admin from "./pages/Admin";
-import EmBreve from "./pages/EmBreve";
 import MapaCalor from "./pages/MapaCalor";
 import ProgramacaoHoraria from "./pages/ProgramacaoHoraria";
+import Hidraulica from "./pages/Hidraulica";
 import CAG from "./pages/CAG";
 import Iluminacao from "./pages/Iluminacao";
 import IluminacaoPavimento from "./pages/IluminacaoPavimento";
 import IluminacaoControladoras from "./pages/IluminacaoControladoras";
-import { Lightbulb, Droplets, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 function Protected({ children, admin }) {
   const { user, checked } = useAuth();
@@ -68,7 +68,8 @@ function App() {
                 <Route path="/iluminacao" element={<Protected><Shell><Iluminacao /></Shell></Protected>} />
                 <Route path="/iluminacao/controladoras" element={<Navigate to="/config/iluminacao" replace />} />
                 <Route path="/iluminacao/pavimento/:id" element={<Protected><Shell><IluminacaoPavimento /></Shell></Protected>} />
-                <Route path="/hidraulica" element={<Protected><Shell><EmBreve title="Hidráulica" icon={Droplets} /></Shell></Protected>} />
+                <Route path="/hidraulica" element={<Protected><Shell><Hidraulica /></Shell></Protected>} />
+                <Route path="/hidraulica/:sistema" element={<Protected><Shell><Hidraulica /></Shell></Protected>} />
                 <Route path="/admin" element={<Navigate to="/config/usuarios" replace />} />
                 <Route path="/config/iluminacao" element={<Protected admin><Shell><IluminacaoControladoras /></Shell></Protected>} />
                 <Route path="/config/:secao" element={<Protected admin><Shell><Admin /></Shell></Protected>} />

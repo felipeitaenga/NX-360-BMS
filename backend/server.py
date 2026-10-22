@@ -21,6 +21,8 @@ from firmware_routes import router as firmware_router, migrate_firmwares
 from controllers import router as controllers_router, registry, seed_models
 from pid import router as pid_router
 from agendas import router as agendas_router, migrar_agendas
+from cag import router as cag_router, cag_svc
+from hidraulica import router as hid_router, hid_svc
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("app")
@@ -47,6 +49,8 @@ app.include_router(firmware_router)
 app.include_router(controllers_router)
 app.include_router(pid_router)
 app.include_router(agendas_router)
+app.include_router(cag_router)
+app.include_router(hid_router)
 
 
 @app.get("/api/health")
@@ -67,6 +71,8 @@ async def _startup():
     lighting_svc.set_loop(asyncio.get_running_loop())
     await lighting_svc.restore()
     await svc.start()
+    await cag_svc.start()
+    await hid_svc.start()
     logger.info("NX-360 BMS backend online")
 
 

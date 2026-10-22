@@ -3,7 +3,7 @@ import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Wind, Lightbulb, Droplets, FileText, Siren, Settings,
   LogOut, Sun, Moon, Menu, X, Thermometer, Volume2, VolumeX, ChevronDown, ChevronRight,
-  KeyRound, Snowflake, Clock, Users, Cpu, Radio, Wrench, Activity, SlidersHorizontal, Database,
+  KeyRound, Snowflake, Clock, Waves, CloudRain, Users, Cpu, Radio, Wrench, Activity, SlidersHorizontal, Database,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
@@ -29,7 +29,19 @@ const ITEMS = [
     ],
   },
   { id: "lighting", label: "Iluminação", icon: Lightbulb, path: "/iluminacao", module: "iluminacao" },
-  { id: "hydraulics", label: "Hidráulica", icon: Droplets, path: "/hidraulica", module: "hidraulica" },
+  {
+    id: "hydraulics",
+    label: "Hidráulica",
+    icon: Droplets,
+    path: "/hidraulica",
+    module: "hidraulica",
+    children: [
+      { id: "hid-geral", label: "Visão geral", icon: LayoutDashboard, path: "/hidraulica" },
+      { id: "hid-agua", label: "Água potável", icon: Droplets, path: "/hidraulica/agua" },
+      { id: "hid-esgoto", label: "Esgoto", icon: Waves, path: "/hidraulica/esgoto" },
+      { id: "hid-pluvial", label: "Pluviais e reúso", icon: CloudRain, path: "/hidraulica/pluvial" },
+    ],
+  },
   { id: "reports", label: "Relatórios", icon: FileText, path: "/relatorios", module: "relatorios" },
   { id: "alarms", label: "Alarmes", icon: Siren, path: "/alarmes", module: "alarmes" },
   // ── Configurações (só administrador) ──
@@ -140,7 +152,7 @@ export default function AppShell({ children }) {
                       <NavLink
                         key={c.id}
                         to={c.path}
-                        end={c.path === "/ar-condicionado"}
+                        end={c.path === "/ar-condicionado" || c.path === "/hidraulica"}
                         onClick={onClick}
                         data-testid={`nav-${c.id}`}
                         className={({ isActive }) =>

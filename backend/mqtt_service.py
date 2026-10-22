@@ -470,7 +470,22 @@ class MQTTService:
             await registry.handle(device_id, var, payload)
         except Exception:
             logger.exception("controller registry error")
-        # 3) Delegate to lighting service if the sub-topic matches lighting pattern
+        # 3) CAG (central de água gelada): TJS/CAG/<EQ>/<VAR>
+        if device_id.upper() == "HID":
+            try:
+                from hidraulica import hid_svc
+                await hid_svc.handle(var, payload)
+            except Exception:
+                logger.exception("HID handler error")
+            return
+        if device_id.upper() == "CAG":
+            try:
+                from cag import cag_svc
+                await cag_svc.handle(var, payload)
+            except Exception:
+                logger.exception("CAG handler error")
+            return
+        # 4) Delegate to lighting service if the sub-topic matches lighting pattern
         try:
             from lighting_service import lighting_svc
             if lighting_svc.is_lighting_subtopic(var) or device_id in lighting_svc.lighting_ids:
@@ -479,7 +494,7 @@ class MQTTService:
                     return
         except Exception:
             logger.exception("lighting handler error")
-        # 4) Fancoil pipeline
+        # 5) Fancoil pipeline
         await self._apply_update(device_id, var, payload)
 
     async def reload_mappings(self):
