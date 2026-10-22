@@ -23,6 +23,7 @@ from pid import router as pid_router
 from agendas import router as agendas_router, migrar_agendas
 from cag import router as cag_router, cag_svc
 from hidraulica import router as hid_router, hid_svc
+from auditoria import router as audit_router, AuditoriaMiddleware, ciclo_expurgo
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger("app")
@@ -42,7 +43,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(AuditoriaMiddleware)
 app.include_router(router)
+app.include_router(audit_router)
 app.include_router(lighting_router)
 app.include_router(pwd_router)
 app.include_router(firmware_router)
@@ -73,6 +76,7 @@ async def _startup():
     await svc.start()
     await cag_svc.start()
     await hid_svc.start()
+    asyncio.create_task(ciclo_expurgo())
     logger.info("NX-360 BMS backend online")
 
 

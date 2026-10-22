@@ -16,6 +16,8 @@ async def ensure_indexes():
     await db.command_log.create_index([("timestamp", -1)])
     await db.history.create_index([("device_id", 1), ("timestamp", -1)])
     await db.access_log.create_index([("timestamp", -1)])
+    await db.audit_log.create_index([("timestamp", -1)])
+    await db.audit_log.create_index([("user_id", 1), ("timestamp", -1)])
     await db.permissions.create_index("user_id", unique=True)
     await db.password_reset_tokens.create_index("expires_at", expireAfterSeconds=0)
     await db.password_reset_tokens.create_index("token_hash", unique=True)

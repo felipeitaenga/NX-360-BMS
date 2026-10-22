@@ -7,6 +7,7 @@ import tarfile
 import logging
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
+from typing import Optional
 from bson import ObjectId
 from bson.json_util import dumps as bson_dumps, loads as bson_loads
 from fastapi import APIRouter, Depends, HTTPException, Response, Request, UploadFile, File, WebSocket, WebSocketDisconnect
@@ -72,11 +73,21 @@ def _fancoil_out(fc: dict, state=None) -> dict:
 
 
 # =============== AUTH ===============
+def _ip(request: Request):
+    from auditoria import ip_da_requisicao
+    return ip_da_requisicao({k.lower(): v for k, v in request.headers.items()},
+                            (request.client.host,) if request.client else None)
+
+
 @router.post("/auth/login")
 async def login(req: LoginReq, response: Response, request: Request):
     email = req.email.lower().strip()
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(req.password, user["password_hash"]):
+        await db.access_log.insert_one({
+            "user_id": str(user["_id"]) if user else None, "email": email, "action": "login_falha",
+            "ip": _ip(request), "timestamp": now_iso(),
+        })
         raise HTTPException(status_code=401, detail="E-mail ou senha incorretos")
     if not user.get("active", True):
         raise HTTPException(status_code=401, detail="Usuário inativo")
@@ -89,7 +100,7 @@ async def login(req: LoginReq, response: Response, request: Request):
     await db.users.update_one({"_id": user["_id"]}, {"$set": {"last_login": now_iso()}})
     await db.access_log.insert_one({
         "user_id": uid, "email": email, "action": "login",
-        "ip": request.client.host if request.client else None,
+        "ip": _ip(request),
         "timestamp": now_iso(),
     })
     return {
@@ -100,11 +111,11 @@ async def login(req: LoginReq, response: Response, request: Request):
 
 
 @router.post("/auth/logout")
-async def logout(response: Response, user: dict = Depends(get_current_user)):
+async def logout(request: Request, response: Response, user: dict = Depends(get_current_user)):
     response.delete_cookie("access_token", path="/")
     await db.access_log.insert_one({
         "user_id": user["id"], "email": user["email"], "action": "logout",
-        "timestamp": now_iso(),
+        "ip": _ip(request), "timestamp": now_iso(),
     })
     return {"ok": True}
 
@@ -428,43 +439,109 @@ async def bulk_command(req: BulkCommandReq, user: dict = Depends(get_current_use
 
 
 # =============== ALARMS ===============
+SIS_ROTA = {"POT": "agua", "ESG": "esgoto", "PLU": "pluvial"}
+
+
+async def _contexto_alarmes(user: dict) -> dict:
+    from auth import allowed_modules
+    fancoils = {}
+    async for fc in db.fancoils.find({}, {"device_id": 1, "name": 1, "floor": 1, "side": 1}):
+        fancoils[fc["device_id"]] = fc
+    return {"fancoils": fancoils, "allowed": await allowed_fancoil_ids(user), "mods": await allowed_modules(user),
+            "usuarios": {str(u["_id"]): u.get("name") or u.get("email") async for u in db.users.find({}, {"name": 1, "email": 1})}}
+
+
+def _enriquecer_alarme(a: dict, ctx: dict, user: dict) -> Optional[dict]:
+    """Categoria, nome do equipamento, local e link da tela; None se o usuário não pode ver."""
+    did = a["device_id"]
+    mods = ctx["mods"]
+    ex = a.get("extra") or {}
+    if did == "__system__":
+        if user["role"] != "admin":
+            return None
+        cat, eq, local, link = "sistema", "Servidor NX-360", "Sistema", "/config/diagnostico"
+    elif did.startswith("CAG/"):
+        if mods is not None and "ar_condicionado" not in mods:
+            return None
+        tag = did[4:]
+        try:
+            from cag import NOMES as CN
+        except Exception:
+            CN = {}
+        cat, eq, local, link = "cag", CN.get(tag, ex.get("equipamento") or tag), "Central de água gelada", "/ar-condicionado/cag"
+    elif did.startswith("HID/"):
+        if mods is not None and "hidraulica" not in mods:
+            return None
+        tag = did[4:]
+        try:
+            from hidraulica import NOMES as HN, SIS_DE, SISTEMAS
+            sis = SIS_DE.get(tag)
+            local = SISTEMAS[sis]["nome"] if sis else "Hidráulica"
+            link = f"/hidraulica/{SIS_ROTA.get(sis)}" if sis else "/hidraulica"
+        except Exception:
+            HN, local, link = {}, "Hidráulica", "/hidraulica"
+        cat, eq = "hidraulica", HN.get(tag, ex.get("reservatorio") or ex.get("bomba") or tag)
+    else:
+        fc = ctx["fancoils"].get(did)
+        fid = str(fc["_id"]) if fc else None
+        if ctx["allowed"] is not None and (fid is None or fid not in ctx["allowed"]):
+            return None
+        cat = "fancoil"
+        eq = fc["name"] if fc else did
+        local = f"{fc.get('floor')}º andar · lado {fc.get('side')}" if fc and fc.get("floor") is not None else "Fancoil"
+        link = f"/ar-condicionado/{fid}" if fid else "/ar-condicionado"
+    a["id"] = str(a.pop("_id"))
+    a.update(categoria=cat, equipamento=eq, local=local, link=link,
+             acknowledged_by_nome=ctx["usuarios"].get(a.get("acknowledged_by") or "", None)
+             or (a.get("acknowledged_by") if a.get("acknowledged_by") and "@" not in str(a.get("acknowledged_by")) and not ObjectId.is_valid(str(a.get("acknowledged_by"))) else None))
+    return a
+
+
 @router.get("/alarms")
-async def list_alarms(active_only: bool = False, limit: int = 500, user: dict = Depends(get_current_user)):
+async def list_alarms(active_only: bool = False, limit: int = 500, days: int = 0, user: dict = Depends(get_current_user)):
     q = {}
     if active_only:
         q["active"] = True
-    allowed = await allowed_fancoil_ids(user)
-    cursor = db.alarms.find(q).sort("started_at", -1).limit(limit)
+    elif days > 0:
+        q["$or"] = [{"active": True}, {"started_at": {"$gte": (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()}}]
+    ctx = await _contexto_alarmes(user)
     out = []
-    # Build device_id -> fancoil_id map for permission filter
-    fancoil_map = {}
-    async for fc in db.fancoils.find({}):
-        fancoil_map[fc["device_id"]] = str(fc["_id"])
-    async for a in cursor:
-        did = a["device_id"]
-        if did == "__system__":
-            if user["role"] != "admin":
-                continue
-        else:
-            fid = fancoil_map.get(did)
-            if allowed is not None and (fid is None or fid not in allowed):
-                continue
-        a["id"] = str(a["_id"])
-        a.pop("_id", None)
-        out.append(a)
+    async for a in db.alarms.find(q).sort("started_at", -1).limit(min(limit, 2000)):
+        e = _enriquecer_alarme(a, ctx, user)
+        if e:
+            out.append(e)
     return out
 
 
 @router.post("/alarms/ack")
 async def ack_alarm(req: AlarmAck, user: dict = Depends(get_current_user)):
+    if user["role"] == "viewer":
+        raise HTTPException(403, "Visualizador não pode reconhecer alarmes")
     r = await db.alarms.find_one_and_update(
         {"_id": ObjectId(req.alarm_id)},
         {"$set": {"acknowledged": True, "acknowledged_by": user["id"], "acknowledged_at": now_iso()}},
     )
     if not r:
         raise HTTPException(status_code=404, detail="Alarme não encontrado")
-    await manager.broadcast("alarm_ack", {"id": req.alarm_id, "by": user["email"]})
+    await manager.broadcast("alarm_ack", {"id": req.alarm_id, "by": user.get("name") or user["email"]})
     return {"ok": True}
+
+
+@router.post("/alarms/ack-todos")
+async def ack_todos(user: dict = Depends(get_current_user)):
+    """Reconhece todos os alarmes não reconhecidos que o usuário pode ver."""
+    if user["role"] == "viewer":
+        raise HTTPException(403, "Visualizador não pode reconhecer alarmes")
+    ctx = await _contexto_alarmes(user)
+    ids = []
+    async for a in db.alarms.find({"acknowledged": False}).limit(2000):
+        if _enriquecer_alarme(dict(a), ctx, user):
+            ids.append(a["_id"])
+    if ids:
+        await db.alarms.update_many({"_id": {"$in": ids}}, {"$set": {
+            "acknowledged": True, "acknowledged_by": user["id"], "acknowledged_at": now_iso()}})
+        await manager.broadcast("alarm_ack", {"id": "todos", "by": user.get("name") or user["email"]})
+    return {"reconhecidos": len(ids)}
 
 
 # =============== HISTORY / REPORTS ===============
@@ -505,52 +582,120 @@ async def get_history(fancoil_id: str, days: int = 1, user: dict = Depends(get_c
     return out
 
 
+CMD_TIPO = {"CMD/SET": "Liga/desliga", "ESTADO/SET": "Modo", "SETPOINT/SET": "Setpoint", "PRESSAO/SET": "Pressão",
+            "PID/SET": "PID", "OTA/SET": "Atualização OTA", "AGENDA": "Programação", "CAG": "CAG", "HID": "Hidráulica"}
+
+
+def _cmd_categoria(c: dict) -> str:
+    did, kind = c.get("device_id") or "", c.get("kind") or ""
+    if kind == "CAG" or did.startswith("CAG"):
+        return "CAG"
+    if kind == "HID" or did.startswith("HID"):
+        return "Hidráulica"
+    if kind == "AGENDA":
+        return "Programação"
+    if kind == "OTA/SET":
+        return "Firmware"
+    return "Fancoils"
+
+
 @router.get("/reports/commands")
-async def report_commands(days: int = 7, format: str = "json", user: dict = Depends(get_current_user)):
+async def report_commands(days: int = 7, format: str = "json", usuario: str = "", categoria: str = "", q: str = "",
+                          user: dict = Depends(get_current_user)):
+    from auditoria import mapa_usuarios, quem, csv_resposta, registrar_exportacao, fmt_local
+    from auth import allowed_modules
+    admin = user["role"] == "admin"
+    days = max(1, min(days, 3650))
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     allowed = await allowed_fancoil_ids(user)
+    mods = await allowed_modules(user)
     fancoil_map = {}
     async for fc in db.fancoils.find({}):
         fancoil_map[fc["device_id"]] = {"id": str(fc["_id"]), "name": fc["name"]}
+    mapa = await mapa_usuarios()
+    alvo_usuario = set()
+    if usuario:
+        alvo_usuario = {usuario} | ({mapa[usuario]["email"]} if usuario in mapa and mapa[usuario].get("email") else set())
     cursor = db.command_log.find({"timestamp": {"$gte": since}}).sort("timestamp", -1).limit(5000)
     rows = []
     async for c in cursor:
         did = c.get("device_id")
-        fm = fancoil_map.get(did, {"id": None, "name": did})
-        if allowed is not None and fm["id"] not in allowed:
+        cat = _cmd_categoria(c)
+        if cat == "CAG" and mods is not None and "ar_condicionado" not in mods:
             continue
-        rows.append({
-            "timestamp": c["timestamp"],
-            "fancoil": fm["name"],
-            "device_id": did,
-            "kind": c.get("kind"),
-            "value": c.get("value"),
-            "previous_value": c.get("previous_value"),
-            "confirmed": c.get("confirmed", False),
-            "user_id": c.get("user_id"),
-        })
+        if cat == "Hidráulica" and mods is not None and "hidraulica" not in mods:
+            continue
+        if cat in ("Fancoils", "Firmware"):
+            fm = fancoil_map.get(did, {"id": None, "name": did})
+            if allowed is not None and fm["id"] not in allowed:
+                continue
+            nome_alvo = fm["name"]
+        elif cat == "Programação":
+            if allowed is not None and not admin:
+                continue
+            fcs = c.get("fancoils") or []
+            nome_alvo = ", ".join(fcs[:5]) + (f" +{len(fcs) - 5}" if len(fcs) > 5 else "")
+        else:
+            tag = (did or "").split("/", 1)[-1] if "/" in (did or "") else ""
+            try:
+                from cag import NOMES as CN
+                from hidraulica import NOMES as HN
+                nome_alvo = (CN if cat == "CAG" else HN).get(tag, tag) or ("Central" if cat == "CAG" else cat)
+            except Exception:
+                nome_alvo = tag or cat
+        if categoria and cat != categoria:
+            continue
+        if alvo_usuario and c.get("user_id") not in alvo_usuario:
+            continue
+        acao = c.get("acao")
+        r = {
+            "timestamp": c["timestamp"], "categoria": cat,
+            "fancoil": nome_alvo, "alvo": nome_alvo, "device_id": did,
+            "kind": c.get("kind"), "tipo": acao or CMD_TIPO.get(c.get("kind"), c.get("kind")),
+            "value": c.get("value"), "previous_value": c.get("previous_value"),
+            "confirmed": c.get("confirmed", False), "simulacao": c.get("simulacao", False),
+            **quem(c.get("user_id"), mapa, admin),
+        }
+        if q and q.lower() not in " ".join(str(v) for v in r.values() if v).lower():
+            continue
+        rows.append(r)
     if format == "csv":
-        buf = io.StringIO()
-        w = csv.DictWriter(buf, fieldnames=list(rows[0].keys()) if rows else ["timestamp", "fancoil"])
-        w.writeheader()
+        await registrar_exportacao(user, "Comandos", {"dias": days, "usuario": usuario, "categoria": categoria, "busca": q})
         for r in rows:
-            w.writerow(r)
-        return StreamingResponse(
-            iter([buf.getvalue()]),
-            media_type="text/csv",
-            headers={"Content-Disposition": "attachment; filename=log_comandos.csv"},
-        )
+            r["quando"] = fmt_local(r["timestamp"])
+            r["confirmado"] = "sim" if r["confirmed"] else "não"
+        cols = [("quando", "Data/hora"), ("usuario", "Usuário")] + ([("email", "E-mail")] if admin else []) + \
+               [("categoria", "Sistema"), ("alvo", "Equipamento"), ("tipo", "Comando"), ("previous_value", "De"),
+                ("value", "Para"), ("confirmado", "Confirmado")]
+        return csv_resposta("log_comandos.csv", rows, cols)
     return rows
 
 
+ACESSO_TXT = {"login": "Entrou", "logout": "Saiu", "login_falha": "Senha incorreta"}
+
+
 @router.get("/reports/access-log")
-async def report_access(days: int = 30, _: dict = Depends(require_admin)):
+async def report_access(days: int = 30, format: str = "json", usuario: str = "", user: dict = Depends(require_admin)):
+    from auditoria import mapa_usuarios, quem, csv_resposta, registrar_exportacao, fmt_local
+    days = max(1, min(days, 3650))
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    cursor = db.access_log.find({"timestamp": {"$gte": since}}).sort("timestamp", -1).limit(2000)
+    filtro = {"timestamp": {"$gte": since}}
+    if usuario:
+        filtro["user_id"] = usuario
+    mapa = await mapa_usuarios()
     rows = []
-    async for a in cursor:
-        a.pop("_id", None)
-        rows.append(a)
+    async for a in db.access_log.find(filtro).sort("timestamp", -1).limit(5000):
+        u = quem(a.get("user_id") or a.get("email"), mapa, True, None, a.get("email"))
+        if not a.get("user_id") and a.get("action") == "login_falha":
+            u = {"usuario": "(e-mail não cadastrado)", "email": a.get("email")}
+        rows.append({"timestamp": a["timestamp"], **u, "action": a.get("action"),
+                     "acao": ACESSO_TXT.get(a.get("action"), a.get("action")), "ip": a.get("ip")})
+    if format == "csv":
+        await registrar_exportacao(user, "Acessos", {"dias": days, "usuario": usuario})
+        for r in rows:
+            r["quando"] = fmt_local(r["timestamp"])
+        return csv_resposta("log_acessos.csv", rows, [("quando", "Data/hora"), ("usuario", "Usuário"), ("email", "E-mail"),
+                                                       ("acao", "Evento"), ("ip", "IP")])
     return rows
 
 
