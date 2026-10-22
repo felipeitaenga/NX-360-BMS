@@ -104,7 +104,7 @@ export default function CagProgramacao() {
   const amanha = data?.semana?.[1]?.lider;
 
   return (
-    <div className="space-y-5 max-w-6xl" data-testid="cag-programacao">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-5 max-w-7xl" data-testid="cag-programacao">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground flex items-center gap-1.5"><Snowflake className="w-3.5 h-3.5" />CAG</div>
