@@ -1,6 +1,6 @@
 {
-  "version": "1.17.0",
+  "version": "1.18.1",
   "build_date": "2026-10-22",
-  "codename": "CAG-PROG",
-  "notes": "CAG: submenu Programação horária (período geral, alternância diária CH1/CH2, horário de pico com 2º chiller), sequenciador no NX-360 (válvula → primária → secundária → chiller com esperas, parada inversa), reserva BAP3/BAS3, failover e rearme de linha."
+  "codename": "AUDITORIA",
+  "notes": "Pacote acumulado: setpoint por chiller (1.16.3), programação horária e sequenciador da CAG (1.17.0), alarmes, relatórios com usuário/auditoria e LGPD (1.18.0). Detalhes em docs/CHANGELOG_1.16.3_a_1.18.0.md."
 }
