@@ -1,0 +1,6 @@
+{
+  "version": "1.18.0",
+  "build_date": "2026-10-22",
+  "codename": "AUDITORIA",
+  "notes": "Alarmes reformulados (fancoils, CAG, hidráulica e sistema; filtros, reconhecer todos, quem reconheceu). Relatórios com usuário em cada registro: nova trilha de Alterações (auditoria), comandos com usuário, acessos com tentativas de senha incorreta. LGPD: minimização por perfil, retenção com expurgo automático, inventário de dados, exportações registradas."
+}

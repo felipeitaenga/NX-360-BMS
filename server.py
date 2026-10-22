@@ -1,0 +1,85 @@
+"""Pilares HVAC — FastAPI entrypoint."""
+from dotenv import load_dotenv
+from pathlib import Path
+
+ROOT = Path(__file__).parent
+load_dotenv(ROOT / ".env")
+
+import os
+import logging
+from fastapi import FastAPI
+from starlette.middleware.cors import CORSMiddleware
+
+from db import ensure_indexes
+from seed import run_all_seeds
+from mqtt_service import svc
+from lighting_service import lighting_svc
+from routes import router
+from lighting_routes import router as lighting_router
+from password_reset import router as pwd_router
+from firmware_routes import router as firmware_router, migrate_firmwares
+from controllers import router as controllers_router, registry, seed_models
+from pid import router as pid_router
+from agendas import router as agendas_router, migrar_agendas
+from cag import router as cag_router, cag_svc
+from hidraulica import router as hid_router, hid_svc
+from auditoria import router as audit_router, AuditoriaMiddleware, ciclo_expurgo
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+logger = logging.getLogger("app")
+
+app = FastAPI(title="NX-360 BMS — Sistema de Automação Predial", version="1.0.0")
+
+cors_origins = os.environ.get("CORS_ORIGINS", "*")
+origins = [o.strip() for o in cors_origins.split(",") if o.strip()]
+if not origins:
+    origins = ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.add_middleware(AuditoriaMiddleware)
+app.include_router(router)
+app.include_router(audit_router)
+app.include_router(lighting_router)
+app.include_router(pwd_router)
+app.include_router(firmware_router)
+app.include_router(controllers_router)
+app.include_router(pid_router)
+app.include_router(agendas_router)
+app.include_router(cag_router)
+app.include_router(hid_router)
+
+
+@app.get("/api/health")
+async def health():
+    return {"status": "ok", "mqtt_connected": svc.connected}
+
+
+@app.on_event("startup")
+async def _startup():
+    await ensure_indexes()
+    await run_all_seeds()
+    await seed_models()
+    await migrate_firmwares()
+    await migrar_agendas()
+    await registry.restore()
+    lighting_svc.set_mqtt(svc)
+    import asyncio
+    lighting_svc.set_loop(asyncio.get_running_loop())
+    await lighting_svc.restore()
+    await svc.start()
+    await cag_svc.start()
+    await hid_svc.start()
+    asyncio.create_task(ciclo_expurgo())
+    logger.info("NX-360 BMS backend online")
+
+
+@app.on_event("shutdown")
+async def _shutdown():
+    await svc.stop()
