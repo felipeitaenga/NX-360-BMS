@@ -740,7 +740,7 @@ async def delete_topic_mapping(mid: str, _: dict = Depends(require_admin)):
 
 # =============== BACKUP / RESTORE (admin only) ===============
 BACKUP_COLLECTIONS = [
-    "users", "fancoils", "schedules", "agendas", "alarms", "device_states", "settings",
+    "users", "fancoils", "schedules", "agendas", "cag_programacao", "alarms", "device_states", "settings",
     "pavimentos", "lighting_controllers", "lighting_points", "lighting_states",
     "lighting_events", "topic_mappings",
 ]

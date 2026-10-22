@@ -24,7 +24,13 @@ const ITEMS = [
     children: [
       { id: "fancoils-list", label: "Fancoil", icon: Wind, path: "/ar-condicionado" },
       { id: "heatmap", label: "Mapa de Calor", icon: Thermometer, path: "/mapa-calor" },
-      { id: "cag", label: "CAG", icon: Snowflake, path: "/ar-condicionado/cag" },
+      {
+        id: "cag", label: "CAG", icon: Snowflake,
+        children: [
+          { id: "cag-sinotico", label: "Sinótico e comandos", icon: LayoutDashboard, path: "/ar-condicionado/cag" },
+          { id: "cag-prog", label: "Programação horária", icon: Clock, path: "/ar-condicionado/cag/programacao" },
+        ],
+      },
       { id: "prog-horaria", label: "Programação Horária", icon: Clock, path: "/ar-condicionado/programacao-horaria" },
     ],
   },
@@ -102,7 +108,7 @@ export default function AppShell({ children }) {
   const items = ITEMS.filter((i) => moduleAllowed(user, perms, i));
 
   const isChildActive = (children = []) =>
-    children.some((c) => location.pathname === c.path || location.pathname.startsWith(c.path + "/"));
+    children.some((c) => (c.children ? isChildActive(c.children) : location.pathname === c.path || location.pathname.startsWith(c.path + "/")));
 
   const [expandedKeys, setExpandedKeys] = useState(() => {
     const map = {};
@@ -148,6 +154,34 @@ export default function AppShell({ children }) {
                 <div className="ml-3 pl-2 border-l border-slate-700/60 flex flex-col gap-1 mt-1">
                   {item.children.map((c) => {
                     const CIcon = c.icon;
+                    if (c.children) {
+                      const subAtivo = isChildActive(c.children);
+                      const subAberto = !!expandedKeys[c.id] || subAtivo;
+                      return (
+                        <div key={c.id} className="flex flex-col">
+                          <button type="button" onClick={() => toggleExpand(c.id)} data-testid={`nav-${c.id}-toggle`}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs transition-all text-left ${subAtivo ? "text-sky-200 font-semibold" : "text-slate-400 hover:text-slate-100 hover:bg-slate-800/60"}`}>
+                            <CIcon className="w-4 h-4" strokeWidth={1.75} />
+                            <span className="flex-1">{c.label}</span>
+                            {subAberto ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                          </button>
+                          {subAberto && (
+                            <div className="ml-3 pl-2 border-l border-slate-700/60 flex flex-col gap-1 mt-1">
+                              {c.children.map((g) => {
+                                const GIcon = g.icon;
+                                return (
+                                  <NavLink key={g.id} to={g.path} end onClick={onClick} data-testid={`nav-${g.id}`}
+                                    className={({ isActive }) => `flex items-center gap-2 px-3 py-1.5 rounded-md text-xs transition-all ${isActive ? "bg-sky-600/20 text-sky-200 font-semibold" : "text-slate-400 hover:text-slate-100 hover:bg-slate-800/60"}`}>
+                                    <GIcon className="w-3.5 h-3.5" strokeWidth={1.75} />
+                                    <span>{g.label}</span>
+                                  </NavLink>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
                     return (
                       <NavLink
                         key={c.id}

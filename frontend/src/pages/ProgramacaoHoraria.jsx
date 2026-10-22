@@ -28,7 +28,7 @@ const novoPeriodo = () => ({ dias: [1, 2, 3, 4, 5], liga: "07:00", desliga: "20:
 const toMin = (h) => { const [a, b] = String(h || "0:0").split(":").map(Number); return a * 60 + b; };
 
 /* ---------- Linha do tempo da semana ---------- */
-function WeekTimeline({ periodos }) {
+export function WeekTimeline({ periodos }) {
   return (
     <div className="space-y-1" data-testid="agenda-timeline">
       {DAYS.map((d) => (
@@ -52,7 +52,7 @@ function WeekTimeline({ periodos }) {
 }
 
 /* ---------- Editor de períodos (agenda ou individual) ---------- */
-function PeriodsEditor({ value, onChange, readOnly }) {
+export function PeriodsEditor({ value, onChange, readOnly, semSetpoint, vazio, novo = novoPeriodo }) {
   const upd = (i, patch) => onChange(value.map((p, j) => (j === i ? { ...p, ...patch } : p)));
   const toggleDay = (i, d) => {
     const dias = value[i].dias.includes(d) ? value[i].dias.filter((x) => x !== d) : [...value[i].dias, d];
@@ -79,7 +79,7 @@ function PeriodsEditor({ value, onChange, readOnly }) {
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-2 xl:w-[360px]">
+          <div className={`grid ${semSetpoint ? "grid-cols-2 xl:w-[240px]" : "grid-cols-3 xl:w-[360px]"} gap-2`}>
             <div>
               <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Liga</div>
               <Input type="time" value={p.liga} disabled={readOnly} onChange={(e) => upd(i, { liga: e.target.value })} data-testid={`periodo-liga-${i}`} />
@@ -97,11 +97,11 @@ function PeriodsEditor({ value, onChange, readOnly }) {
                 ? <Input type="time" value={p.desliga} disabled={readOnly} onChange={(e) => upd(i, { desliga: e.target.value })} data-testid={`periodo-desliga-${i}`} />
                 : <div className="h-10 flex items-center text-xs text-muted-foreground">não desliga</div>}
             </div>
-            <div>
+            {!semSetpoint && <div>
               <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Setpoint °C</div>
               <Input type="number" step="0.5" min="10" max="35" placeholder="—" title="Vazio = mantém o setpoint atual" disabled={readOnly}
                 value={p.setpoint ?? ""} onChange={(e) => upd(i, { setpoint: e.target.value === "" ? null : Number(e.target.value) })} />
-            </div>
+            </div>}
           </div>
           {!readOnly && (
             <Button variant="outline" size="sm" className="self-end" onClick={() => onChange(value.filter((_, j) => j !== i))} title="Remover período">
@@ -110,9 +110,9 @@ function PeriodsEditor({ value, onChange, readOnly }) {
           )}
         </div>
       ))}
-      {!value.length && <div className="text-sm text-muted-foreground px-1">Nenhum período — quem seguir esta agenda não liga nem desliga sozinho.</div>}
+      {!value.length && <div className="text-sm text-muted-foreground px-1">{vazio || "Nenhum período — quem seguir esta agenda não liga nem desliga sozinho."}</div>}
       {!readOnly && (
-        <Button variant="outline" size="sm" onClick={() => onChange([...value, novoPeriodo()])} data-testid="periodo-add">
+        <Button variant="outline" size="sm" onClick={() => onChange([...value, novo()])} data-testid="periodo-add">
           <Plus className="w-4 h-4 mr-1" /> Adicionar período
         </Button>
       )}

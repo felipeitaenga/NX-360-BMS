@@ -20,6 +20,7 @@ import MapaCalor from "./pages/MapaCalor";
 import ProgramacaoHoraria from "./pages/ProgramacaoHoraria";
 import Hidraulica from "./pages/Hidraulica";
 import CAG from "./pages/CAG";
+import CagProgramacao from "./pages/CagProgramacao";
 import Iluminacao from "./pages/Iluminacao";
 import IluminacaoPavimento from "./pages/IluminacaoPavimento";
 import IluminacaoControladoras from "./pages/IluminacaoControladoras";
@@ -61,6 +62,7 @@ function App() {
                 <Route path="/ar-condicionado" element={<Protected><Shell><Fancoils /></Shell></Protected>} />
                 <Route path="/ar-condicionado/programacao-horaria" element={<Protected><Shell><ProgramacaoHoraria /></Shell></Protected>} />
                 <Route path="/ar-condicionado/cag" element={<Protected><Shell><CAG /></Shell></Protected>} />
+                <Route path="/ar-condicionado/cag/programacao" element={<Protected><Shell><CagProgramacao /></Shell></Protected>} />
                 <Route path="/ar-condicionado/:id" element={<Protected><Shell><FancoilDetail /></Shell></Protected>} />
                 <Route path="/mapa-calor" element={<Protected><Shell><MapaCalor /></Shell></Protected>} />
                 <Route path="/alarmes" element={<Protected><Shell><Alarmes /></Shell></Protected>} />

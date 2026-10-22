@@ -1,6 +1,6 @@
 {
-  "version": "1.16.1",
-  "build_date": "2026-10-19",
-  "codename": "HIDRAULICA",
-  "notes": "Hidráulica: boia 1 = alarme/proteção, boia 2 = controle da bomba, boia 3 = alarme, com lógica por tipo de reservatório (abastecido, fonte, esgotamento); falha de boia e bomba sem vazão. Inclui CAG v1.15 e Hidráulica v1.16."
+  "version": "1.17.0",
+  "build_date": "2026-10-22",
+  "codename": "CAG-PROG",
+  "notes": "CAG: submenu Programação horária (período geral, alternância diária CH1/CH2, horário de pico com 2º chiller), sequenciador no NX-360 (válvula → primária → secundária → chiller com esperas, parada inversa), reserva BAP3/BAS3, failover e rearme de linha."
 }

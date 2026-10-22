@@ -219,7 +219,7 @@ function Chiller({ id, x, y, e, sel, onSel }) {
       </g>
       <g transform={`translate(${x + 30},${y - 40})`}>
         <text className="cx-lbl" fontSize="15">{id === "CH1" ? "CHILLER 1" : "CHILLER 2"}</text>
-        <text y="16" className="cx-sub">parafuso · condensação a ar</text>
+        <text y="16" className="cx-sub"><tspan fill="#7dd3fc" fontWeight="700">SP {fmt(e?.setpoint)} °C</tspan> · parafuso</text>
       </g>
       <g transform={`translate(${x + W - 150},${y - 58})`}>
         <rect width="150" height="30" rx="7" fill="#020617" stroke={c} strokeOpacity=".7" />
@@ -260,7 +260,7 @@ export default function CagSinotico({ s, sel, onSel }) {
       <text x="1030" y="40" className="cx-sub" letterSpacing="3">CIRCUITO SECUNDÁRIO</text>
       <Tubo pts={[[60, 120], [1020, 120]]} tipo="c" fluxo={pri} w={20} />
       <Tubo pts={[[1370, 780], [60, 780]]} tipo="q" fluxo={pri || sec} w={20} />
-      <Tubo pts={[[60, 560], [760, 560]]} tipo="q" fluxo={pri} />
+      <Tubo pts={[[760, 560], [60, 560]]} tipo="q" fluxo={pri} />
 
       {/* chillers: saída fria (sobe ao coletor) e entrada (válvula atuada) */}
       {Object.entries(chX).map(([id, x]) => {
@@ -269,7 +269,7 @@ export default function CagSinotico({ s, sel, onSel }) {
         return (
           <g key={id}>
             <Tubo pts={[[x - 30, chY + 202], [x - 62, chY + 202], [x - 62, 120]]} tipo="c" fluxo={vazao} w={12} />
-            <Tubo pts={[[x - 30, chY + 224], [x - 40, chY + 224], [x - 40, 560]]} tipo="q" fluxo={vazao} w={12} />
+            <Tubo pts={[[x - 40, 560], [x - 40, chY + 224], [x - 30, chY + 224]]} tipo="q" fluxo={vazao} w={12} />
             <Valvula x={x - 62} y={300} vert />
           </g>
         );
